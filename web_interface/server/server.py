@@ -32,9 +32,6 @@ def get_user_session():
 # Helper function to save graph state for undo/redo
 def save_graph_state():
     current_graph = session['graph']
-    # Create a deep copy of the current graph state
-    # Note: This is a simplified version. In a real implementation,
-    # you'd need to properly serialize the graph state
     graph_state = {
         'vertices': current_graph.get_vertices(),
         'edges': current_graph.get_edges()
