@@ -74,6 +74,16 @@ int Graph::getVertexDegree(int id) const {
     return representation_->getVertexDegree(id);
 }
 
+// Реализация получения смежных вершин с данной
+std::vector<int> getNeighborsVertex(int vertex_id) const {
+    return representation_->getNeighborsVertex(vertex_id);
+}
+
+// Реализация получения веса ребра между двумя вершинами
+int getEdgeWeight(int from_vertex, int to_vertex) {
+    return representation_->getEdgeWeight(from_vertex, to_vertex);
+}
+
 // Реализация получения строкового представления.
 std::string Graph::getRepresentationString() const {
     // Делегируем операцию текущему представлению.

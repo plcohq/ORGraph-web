@@ -67,6 +67,37 @@ int AdjacencyList::getVertexDegree(int id) const {
     return adj_list_[id].size();
 }
 
+// Реализация получения смежных вершин с данной
+std::vector<int> AdjacencyList::getNeighbors(int vertex_id) const {
+    std::vector<int> neighbors;
+    if (vertex_id >= adj_list_.size() || vertex_id < 0) {
+        return neighbors; // Пустой вектор
+    }
+    const auto& edges = adj_list_[vertex_id];
+    neighbors.reserve(edges.size());
+    for (const auto& edge : edges) {
+        neighbors.push_back(edge.target_id);
+    }
+    return neighbors;
+}
+
+// Реализация получения веса ребра между 2-мя вершинами
+double AdjacencyList::getEdgeWeight(int from_vertex, int to_vertex) const {
+    if (from_vertex >= adj_list_.size() 
+	|| to_vertex >= adj_list_.size() 
+	|| from_vertex < 0 
+	|| to_vertex < 0)
+        return -1.0; // Неверные вершины
+
+    // Ищем ребро от from к to
+    const auto& edges = adj_list_[from_vertex];
+    for (const auto& edge : edges)
+        if (edge.target_id == to_vertex)
+            return edge.weight;
+
+    return -1.0; // Ребро не найдено
+}
+
 // Реализация получения строкового представления
 std::string AdjacencyList::getAsString() const {
     std::stringstream ss;

@@ -60,6 +60,12 @@ public:
     // Возвращает степень вершины. Делегирует вызов представлению.
     int getVertexDegree(int id) const;
 
+    // Возвращает список вершин, смежных с данной
+    std::vector<int> getNeighborsVertex(int vertex_id) const;
+
+    // Возвращает вес ребра между двумя указанными вершинами
+    double getEdgeWeight(int from_vertex, int to_vertex) const;
+
     // Возвращает строковое представление графа (список или матрицу).
     // Вызывает соответствующий метод у объекта представления.
     std::string getRepresentationString() const;
