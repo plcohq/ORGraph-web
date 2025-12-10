@@ -59,6 +59,35 @@ int AdjacencyMatrix::getVertexDegree(int id) const {
     return degree;
 }
 
+// Реализация поиска смежных вершин с данной
+std::vector<int> AdjacencyMatrix::getNeighbors(int vertex_id) const {
+    std::vector<int> neighbors;
+    if (vertex_id >= matrix_.size() || vertex_id < 0)
+        return neighbors;
+
+    const auto& row = matrix_[vertex_id];
+    for (int i = 0; i < row.size(); ++i)
+        if (row[i] >= 0) // Если есть ребро (неотрицательный вес)
+            neighbors.push_back(i);
+    
+    return neighbors;
+}
+
+// Реализация поиска веса ребра между 2-мя вершинами
+double AdjacencyMatrix::getEdgeWeight(int from_vertex, int to_vertex) const {
+    if (from_vertex >= matrix_.size() 
+	|| to_vertex >= matrix_[0].size() 
+	|| from_vertex < 0 
+	|| to_vertex < 0)
+        return -1.0;
+    
+    double weight = matrix_[from][to];
+    if (weight >= 0)
+        return weight;
+    
+    return -1.0;
+}
+
 std::string AdjacencyMatrix::getAsString() const {
     std::stringstream ss;
     ss << "--- Матрица смежности ---\n";
