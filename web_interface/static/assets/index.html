@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORGraph Interface</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <h1 class="logo">ORGraph</h1>
+
+            <div class="section">
+                <h2>Инструменты</h2>
+                <button id="add-vertex-btn" class="sidebar-button">Добавить вершину</button>
+                <button id="add-edge-btn" class="sidebar-button">Добавить ребро</button>
+                <button id="delete-element-btn" class="sidebar-button">Удалить</button>
+            </div>
+
+            <div class="section">
+                <h2>Генерация графов</h2>
+                <button id="create-random-btn" class="sidebar-button">Создать случайный граф</button>
+                <button id="create-classic-btn" class="sidebar-button">Создать классический граф</button>
+            </div>
+
+            <div class="section">
+                <h2>Алгоритмы</h2>
+                <button id="select-algorithm-btn" class="sidebar-button">Выбрать алгоритм</button>
+            </div>
+        </aside>
+
+        <main class="graph-area">
+            <svg id="graph-svg" class="graph-svg" viewBox="0 0 900 600">
+                <g id="graph-elements">
+                </g>
+            </svg>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
