@@ -1,0 +1,300 @@
+html, body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0; 
+    height: 100%; 
+    width: 100%;  
+    overflow: hidden; 
+}
+
+.container {
+    display: flex;
+    width: 100%;      
+    height: 100%;  
+    background-color: #f0f0f0;
+    overflow: hidden;
+}
+
+
+.sidebar {
+    width: 220px; 
+    background-color: #f8f8f8; 
+    padding: 20px;
+    border-right: 1px solid #e0e0e0;
+    flex-shrink: 0; 
+    display: flex;
+    flex-direction: column;
+    gap: 15px; 
+}
+
+.logo {
+    font-size: 28px;
+    font-weight: 700;
+    color: #4CAF50; 
+    margin: 0 0 20px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.section h2 {
+    font-size: 16px;
+    font-weight: 500;
+    color: #555;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sidebar-button {
+    display: block;
+    width: 100%;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    background-color: #e8e8e8; 
+    border: none;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.sidebar-button:hover {
+    background-color: #dcdcdc; 
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-button:active {
+    background-color: #c8c8c8;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.graph-area {
+    flex-grow: 1;
+    background-color: #fdfdfd; 
+    position: relative;
+    overflow: hidden; 
+
+  
+    background-image:
+        linear-gradient(to right, #e0e0e0 1px, transparent 1px),
+        linear-gradient(to bottom, #e0e0e0 1px, transparent 1px);
+    background-size: 20px 20px; 
+    cursor: grab;
+}
+
+.graph-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.graph-svg text {
+    font-family: 'Roboto', sans-serif;
+    pointer-events: none; 
+    user-select: none; 
+}
+
+.graph-area.panning {
+    cursor: grabbing;
+}
+
+.node {
+    cursor: grab; 
+}
+
+.node.dragging {
+    cursor: grabbing;
+}
+
+/* Выделенная вершина */
+.node.selected circle {
+    stroke: #4CAF50; 
+    stroke-width: 3;
+}
+
+/* Первая вершина для ребра (подсветка) */
+.node.edge-start-node circle {
+    stroke: #FFC107; /* Яркий желтый/оранжевый */
+    stroke-width: 3;
+    animation: pulse 1s infinite alternate; /* Легкая анимация, чтобы было заметнее */
+}
+
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.05); }
+}
+
+
+/* Выделенное ребро */
+line.selected {
+    stroke: #4CAF50;
+    stroke-width: 4;
+}
+
+/* Активные кнопки на панели инструментов */
+.sidebar-button.active {
+    background-color: #4CAF50 !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3) !important;
+    font-weight: bold !important;
+}
+
+.sidebar-button.active:hover {
+    background-color: #45a049 !important;
+}
+
+/* Ребра */
+g[data-edge-id] line { /* Стили для линии внутри группы ребра */
+    cursor: pointer;
+    transition: stroke 0.2s;
+}
+
+g[data-edge-id] line:hover {
+    stroke: #4CAF50;
+    stroke-width: 3;
+}
+
+/* Курсоры для разных режимов */
+.graph-area.add-vertex-mode { /* Переименовал, чтобы не конфликтовать */
+    cursor: crosshair;
+}
+
+.graph-area.delete-mode { /* Переименовал */
+    cursor: not-allowed;
+}
+
+.graph-area.add-edge-mode { /* Новый курсор для режима добавления/редактирования ребер */
+    cursor: pointer; /* Для клика по вершинам/ребрам */
+}
+
+
+/* Модальные окна */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    width: 350px;
+    max-width: 90%;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    text-align: left; /* Важно для текста внутри */
+}
+
+.modal-content h3 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #555;
+}
+
+.form-group select,
+.form-group input[type="number"],
+.form-group input[type="text"] { /* Добавил input[type="text"] */
+    width: calc(100% - 22px); /* Учитываем паддинг и бордер */
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.form-group input[type="checkbox"] {
+    margin-right: 8px;
+    transform: scale(1.2); /* Немного увеличим чекбокс */
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-buttons button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-buttons button:hover {
+    opacity: 0.9;
+}
+
+.modal-buttons .primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.modal-buttons .primary:hover {
+    background: #45a049;
+}
+
+/* Стили для текста веса ребра */
+g[data-edge-id] text { /* Стили для текста внутри группы ребра */
+    pointer-events: none; /* Не перехватывает события мыши */
+    user-select: none;
+}
+
+/* Стили для петель */
+g[data-edge-id] path {
+    cursor: pointer;
+    transition: stroke 0.2s;
+}
+
+g[data-edge-id] path:hover {
+    stroke: #4CAF50;
+    stroke-width: 3;
+}
+
+/* Выделенная петля */
+g[data-edge-id] path.selected {
+    stroke: #4CAF50;
+    stroke-width: 4;
+}
+
+/* Стили для кнопок Undo/Redo */
+.undo-redo-btn:enabled:hover {
+    opacity: 1 !important;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+    transform: translateY(-1px);
+}
+
+.undo-redo-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5 !important;
+}
+
+.undo-redo-btn:active:enabled {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+}
