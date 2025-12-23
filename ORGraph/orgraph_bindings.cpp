@@ -5,11 +5,11 @@
 #include "include/algorithms/deijkstra_algorithm.h"
 #include "include/algorithms/prim_algorithm.h"
 #include "include/algorithms/ford_bellman_algorithm.h"
-#include "include/algorithms/floyd_algorithm.h"
+// #include "include/algorithms/floyd_algorithm.h" // Убрано
 #include "include/algorithms/euler_path_algorithm.h"
 #include "include/algorithms/hamiltonian_path_algorithm.h"
 #include "include/algorithms/topology_sort.h"
-#include "include/algorithms/GraphGenerator.h"
+#include "include/GraphGenerator.h"
 #include <nlohmann/json.hpp>
 
 namespace py = pybind11;
@@ -155,11 +155,14 @@ public:
         return json_to_py(j);
     }
 
+    // Убрана функция floyd_warshall
+    /*
     py::object floyd_warshall(int start_vertex, int end_vertex) {
         std::string result = FloydWarshall(graph, start_vertex, end_vertex);
         json j = json::parse(result);
         return json_to_py(j);
     }
+    */
 
     py::object find_eulerian_path() {
         std::string result = FindEulerPath(graph);
@@ -418,9 +421,12 @@ PYBIND11_MODULE(orgraph_core, m) {
              py::arg("start_vertex"),
              "Run Ford-Bellman algorithm")
         
+        // Убран метод floyd_warshall
+        /*
         .def("floyd_warshall", &PyGraph::floyd_warshall,
              py::arg("start_vertex"), py::arg("end_vertex"),
              "Run Floyd-Warshall algorithm")
+        */
         
         .def("find_eulerian_path", &PyGraph::find_eulerian_path,
              "Find Eulerian path")

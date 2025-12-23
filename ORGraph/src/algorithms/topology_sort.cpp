@@ -1,5 +1,5 @@
-#include "topological_sort_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/topology_sort.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <stack>
@@ -16,7 +16,7 @@ bool dfs(int v, const Graph& graph,
     color[v] = 1; // Серый - вершина в обработке
     
     // Получаем всех соседей текущей вершины
-    std::vector<int> neighbors = graph.getNeighbors(v);
+    std::vector<int> neighbors = graph.getNeighborsVertex(v);
     
     for (int neighbor : neighbors) {
         if (color[neighbor] == 0) {
@@ -112,7 +112,7 @@ std::string TopologicalSort(const Graph& graph) {
     // Уровень вершины = максимальный уровень среди предшественников + 1
     std::vector<int> level(n, 0);
     for (int v : order) {
-        std::vector<int> neighbors = graph.getNeighbors(v);
+        std::vector<int> neighbors = graph.getNeighborsVertex(v);
         for (int neighbor : neighbors) {
             // Если есть ребро v -> neighbor, то neighbor должен быть позже
             int neighbor_idx = inverted_order[neighbor];
@@ -151,7 +151,7 @@ std::string TopologicalSort(const Graph& graph) {
     // Проверяем, что порядок корректный
     bool is_valid = true;
     for (int i = 0; i < n; ++i) {
-        std::vector<int> neighbors = graph.getNeighbors(i);
+        std::vector<int> neighbors = graph.getNeighborsVertex(i);
         for (int neighbor : neighbors) {
             // Для каждого ребра i -> neighbor, i должен быть раньше neighbor
             if (inverted_order[i] > inverted_order[neighbor]) {

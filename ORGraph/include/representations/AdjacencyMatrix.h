@@ -12,7 +12,7 @@ public:
     bool removeEdge(int from, int to) override;
     int getEdgeCount() const override;
     int getVertexDegree(int id) const override;
-    std::vector<int> getNeighbor(int vertex_id) const override;
+    std::vector<int> getNeighbors(int vertex_id) const override; // ИЗМЕНИТЬ getNeighbor -> getNeighbors
     double getEdgeWeight(int from_vertex, int to_vertex) const override;
     std::string getAsString() const override;
     void resize(int new_size) override;

@@ -1,5 +1,5 @@
-#include "ford_bellman_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/ford_bellman_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <limits>
@@ -18,7 +18,7 @@ std::string FordBellman(const Graph& graph, int start_vertex) {
     // Получаем все ребра графа
     std::vector<std::tuple<int, int, double>> edges;
     for (int i = 0; i < n; ++i) {
-        std::vector<int> neighbors = graph.getNeighbors(i);
+        std::vector<int> neighbors = graph.getNeighborsVertex(i);
         for (int j : neighbors) {
             double weight = graph.getEdgeWeight(i, j);
             if (weight >= 0) { // Ребро существует

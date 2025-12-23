@@ -1,4 +1,4 @@
-#include "GraphGenerator.h"
+#include "../include/GraphGenerator.h"
 #include <random>   // Для качественного генератора случайных чисел
 #include <vector>
 #include <set>      // Для эффективной проверки на дубликаты рёбер
