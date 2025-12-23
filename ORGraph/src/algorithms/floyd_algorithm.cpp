@@ -1,5 +1,5 @@
-#include "floyd_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/floyd_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <limits>
@@ -32,7 +32,7 @@ std::string FloydWarshall(const Graph& graph, int start_vertex, int end_vertex) 
         next[i][i] = i;
         
         // Получаем соседей
-        std::vector<int> neighbors = graph.getNeighbors(i);
+        std::vector<int> neighbors = graph.getNeighborsVertex(i);
         for (int j : neighbors) {
             double weight = graph.getEdgeWeight(i, j);
             if (weight >= 0) {

@@ -1590,7 +1590,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
                 <button class="algorithm-btn" data-algorithm="bfs" title="Обход в ширину">BFS</button>
                 <button class="algorithm-btn" data-algorithm="dijkstra" title="Кратчайший путь (Дейкстра)">Дейкстра</button>
                 <button class="algorithm-btn" data-algorithm="ford_bellman" title="Алгоритм Форда-Беллмана">Форд-Беллман</button>
-                <button class="algorithm-btn" data-algorithm="floyd_warshall" title="Алгоритм Флойда-Уоршелла">Флойд-Уоршелл</button>
+                <button class="algorithm-btn" data-algorithm="floyd_algorithm" title="Алгоритм Флойда-Уоршелла">Флойд-Уоршелл</button>
                 <button class="algorithm-btn" data-algorithm="prim" title="Алгоритм Прима (MST)">Прима (MST)</button>
                 <button class="algorithm-btn" data-algorithm="minimum_spanning_tree" title="Минимальное остовное дерево">Остовное дерево</button>
                 <button class="algorithm-btn" data-algorithm="topological_sort" title="Топологическая сортировка">Топологическая</button>
@@ -1796,7 +1796,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         'bfs': 'Обход графа в ширину (Breadth-First Search) - обход графа уровень за уровнем.',
         'dijkstra': 'Алгоритм Дейкстры - поиск кратчайшего пути между вершинами во взвешенном графе с неотрицательными весами.',
         'ford_bellman': 'Алгоритм Форда-Беллмана - поиск кратчайших путей из одной вершины во взвешенном графе (может содержать отрицательные веса, но не отрицательные циклы).',
-        'floyd_warshall': 'Алгоритм Флойда-Уоршелла - поиск кратчайших путей между всеми парами вершин во взвешенном графе.',
+        'floyd_algorithm': 'Алгоритм Флойда-Уоршелла - поиск кратчайших путей между всеми парами вершин во взвешенном графе.',
         'prim': 'Алгоритм Прима - построение минимального остовного дерева для взвешенного неориентированного графа.',
         'minimum_spanning_tree': 'Минимальное остовное дерево - подграф, связывающий все вершины с минимальным суммарным весом рёбер.',
         'topological_sort': 'Топологическая сортировка - линейное упорядочивание вершин ориентированного графа, при котором для любого ребра (u→v) вершина u идёт раньше v.',
@@ -1823,17 +1823,17 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
             
             // Показываем нужные параметры
             if (algorithm === 'dfs' || algorithm === 'bfs' || algorithm === 'dijkstra' || 
-                algorithm === 'ford_bellman' || algorithm === 'floyd_warshall' || 
+                algorithm === 'ford_bellman' || algorithm === 'floyd_algorithm' || 
                 algorithm === 'topological_sort') {
                 document.getElementById('start-vertex-param').style.display = 'block';
             }
             
-            if (algorithm === 'dijkstra' || algorithm === 'floyd_warshall') {
+            if (algorithm === 'dijkstra' || algorithm === 'floyd_algorithm') {
                 document.getElementById('end-vertex-param').style.display = 'block';
             }
             
             if (algorithm === 'dijkstra' || algorithm === 'ford_bellman' || 
-                algorithm === 'floyd_warshall' || algorithm === 'prim' || 
+                algorithm === 'floyd_algorithm' || algorithm === 'prim' || 
                 algorithm === 'minimum_spanning_tree') {
                 document.getElementById('weighted-param').style.display = 'block';
             }
@@ -1856,19 +1856,19 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         const params = {};
         
         if (algorithm === 'dfs' || algorithm === 'bfs' || algorithm === 'dijkstra' || 
-            algorithm === 'ford_bellman' || algorithm === 'floyd_warshall' || 
+            algorithm === 'ford_bellman' || algorithm === 'floyd_algorithm' || 
             algorithm === 'topological_sort') {
             const startVertex = document.getElementById('algorithm-start-vertex').value;
             if (startVertex) params.start_vertex = parseInt(startVertex);
         }
         
-        if (algorithm === 'dijkstra' || algorithm === 'floyd_warshall') {
+        if (algorithm === 'dijkstra' || algorithm === 'floyd_algorithm') {
             const endVertex = document.getElementById('algorithm-end-vertex').value;
             if (endVertex) params.end_vertex = parseInt(endVertex);
         }
         
         if (algorithm === 'dijkstra' || algorithm === 'ford_bellman' || 
-            algorithm === 'floyd_warshall' || algorithm === 'prim' || 
+            algorithm === 'floyd_algorithm' || algorithm === 'prim' || 
             algorithm === 'minimum_spanning_tree') {
             const weighted = document.getElementById('algorithm-weighted').checked;
             params.weighted = weighted;
@@ -1900,7 +1900,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
                 
                 // Показываем кнопку визуализации для некоторых алгоритмов
                 if (algorithm === 'dijkstra' || algorithm === 'ford_bellman' || 
-                    algorithm === 'floyd_warshall' || algorithm === 'prim' || 
+                    algorithm === 'floyd_algorithm' || algorithm === 'prim' || 
                     algorithm === 'minimum_spanning_tree' || algorithm === 'find_eulerian_path' ||
                     algorithm === 'find_hamiltonian_path' || algorithm === 'topological_sort') {
                     visualizeBtn.style.display = 'block';
@@ -1999,7 +1999,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
                 }
                 break;
                 
-            case 'floyd_warshall':
+            case 'floyd_algorithm':
                 if (result.success) {
                     html = `
                         <div style="margin-bottom: 10px;">
