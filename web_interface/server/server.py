@@ -140,9 +140,29 @@ def get_graph():
         graph_json = graph.to_json()
         graph_data = json.loads(graph_json)
         
+        print(f"DEBUG: Graph data from C++ module: {graph_data}")  # Логирование
+        
+        # Фильтруем дубликаты рёбер
+        edges = graph_data.get('edges', [])
+        unique_edges = []
+        seen_edges = set()
+        
+        for edge in edges:
+            # Создаем ключ для проверки уникальности
+            if isinstance(edge, dict):
+                edge_key = (edge.get('source'), edge.get('target'))
+            elif isinstance(edge, list) and len(edge) >= 2:
+                edge_key = (edge[0], edge[1])
+            else:
+                edge_key = tuple(edge[:2])
+                
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                unique_edges.append(edge)
+        
         return jsonify({
             'vertices': [str(v) for v in graph.get_vertices()],
-            'edges': graph_data.get('edges', [])
+            'edges': unique_edges  # Возвращаем уникальные ребра
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -224,9 +244,20 @@ def add_edge():
     source = int(data['source'])
     target = int(data['target'])
     weight = float(data.get('weight', 1.0))
+    directed = bool(data.get('directed', True))  # ИЗМЕНЕНИЕ: по умолчанию True!
+    
+    print(f"DEBUG: Adding edge {source}->{target}, weight={weight}, directed={directed}")
     
     try:
         success = graph.add_edge(source, target, weight)
+        
+        # Если граф ненаправленный и нужно двустороннее ребро
+        # ТОЛЬКО если явно указано directed=False
+        if not directed and source != target:  # Добавляем проверку source != target
+            # Добавляем обратное ребро для ненаправленного графа
+            print(f"DEBUG: Adding reverse edge {target}->{source}")
+            reverse_success = graph.add_edge(target, source, weight)
+        
         update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
@@ -269,15 +300,15 @@ def run_algorithm(algorithm_name):
             start = int(data.get('start_vertex', 0))
             result = graph.ford_bellman(start)
             
-        elif algorithm_name == 'floyd_warshall':
+        elif algorithm_name == 'floyd_algorithm':
             start = int(data.get('start_vertex', 0))
             end = int(data.get('end_vertex', 0))
-            result = graph.floyd_warshall(start, end)
+            result = graph.floyd_algorithm(start, end)
             
-        elif algorithm_name == 'euler_path':
+        elif algorithm_name == 'find_eulerian_path':
             result = graph.find_eulerian_path()
             
-        elif algorithm_name == 'hamiltonian_path':
+        elif algorithm_name == 'find_hamiltonian_path':
             result = graph.find_hamiltonian_path()
             
         elif algorithm_name == 'topological_sort':
