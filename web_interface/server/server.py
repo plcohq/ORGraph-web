@@ -1,50 +1,49 @@
 from flask import Flask, request, jsonify, session, send_from_directory
 from flask_session import Session
+import orgraph_core  # Наш C++ модуль
 import os
 import uuid
 import json
-import orgraph_core  # Our C++ library bindings
-from werkzeug.utils import secure_filename
 import tempfile
-import shutil
 
-app = Flask(__name__, static_folder='../static', static_url_path='')
+app = Flask(__name__, static_folder='../frontend', static_url_path='')
 
-# Configure session
+# Конфигурация сессии
 app.config['SECRET_KEY'] = os.urandom(24)
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = tempfile.mkdtemp()
 Session(app)
 
-# Directory for temporary file storage
-TEMP_DIR = tempfile.mkdtemp()
-app.config['UPLOAD_FOLDER'] = TEMP_DIR
-
-# Helper function to get or create a user session
 def get_user_session():
+    """Получить или создать сессию пользователя"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
         session['graph'] = orgraph_core.Graph()
-        session['history'] = []  # For undo/redo functionality
+        session['history'] = []
         session['history_index'] = -1
     return session
 
-# Helper function to save graph state for undo/redo
 def save_graph_state():
+    """Сохранить состояние графа для undo/redo"""
     current_graph = session['graph']
+    
+    # Получаем текущее состояние
+    vertices = current_graph.get_vertices()
+    edges = current_graph.get_edges()
+    
     graph_state = {
-        'vertices': current_graph.get_vertices(),
-        'edges': current_graph.get_edges()
+        'vertices': list(vertices),
+        'edges': [list(edge) for edge in edges]  # Преобразуем tuple в list
     }
     
-    # Remove any states after the current index (for redo)
-    session['history'] = session['history'][:session['history_index']+1]
+    # Удаляем состояния после текущего индекса
+    session['history'] = session['history'][:session['history_index'] + 1]
     
-    # Add the new state
+    # Добавляем новое состояние
     session['history'].append(graph_state)
     session['history_index'] += 1
 
-# API Routes
+# Маршруты API
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -54,13 +53,17 @@ def get_graph():
     user_session = get_user_session()
     graph = user_session['graph']
     
-    vertices = graph.get_vertices()
-    edges = graph.get_edges()
-    
-    return jsonify({
-        'vertices': vertices,
-        'edges': edges
-    })
+    try:
+        # Получаем граф в формате JSON
+        graph_json = graph.to_json()
+        graph_data = json.loads(graph_json)
+        
+        return jsonify({
+            'vertices': [str(v) for v in graph.get_vertices()],
+            'edges': graph_data.get('edges', [])
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/graph/clear', methods=['POST'])
 def clear_graph():
@@ -75,15 +78,17 @@ def add_vertex():
     user_session = get_user_session()
     data = request.json
     
-    if 'id' not in data:
+    if not data or 'id' not in data:
         return jsonify({'error': 'Vertex ID is required'}), 400
     
     save_graph_state()
     graph = user_session['graph']
     
     try:
-        graph.add_vertex(data['id'])
-        return jsonify({'status': 'success'})
+        # В нашей реализации вершины добавляются с автоинкрементом ID
+        # Метка используется для отображения
+        vertex_id = graph.add_vertex(str(data['id']))
+        return jsonify({'status': 'success', 'id': vertex_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -94,8 +99,8 @@ def remove_vertex(vertex_id):
     graph = user_session['graph']
     
     try:
-        graph.remove_vertex(vertex_id)
-        return jsonify({'status': 'success'})
+        success = graph.remove_vertex(int(vertex_id))
+        return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -104,20 +109,19 @@ def add_edge():
     user_session = get_user_session()
     data = request.json
     
-    if 'source' not in data or 'target' not in data:
+    if not data or 'source' not in data or 'target' not in data:
         return jsonify({'error': 'Source and target vertices are required'}), 400
     
     save_graph_state()
     graph = user_session['graph']
     
-    source = data['source']
-    target = data['target']
-    weight = data.get('weight', 1.0)
-    directed = data.get('directed', False)
+    source = int(data['source'])
+    target = int(data['target'])
+    weight = float(data.get('weight', 1.0))
     
     try:
-        graph.add_edge(source, target, weight, directed)
-        return jsonify({'status': 'success'})
+        success = graph.add_edge(source, target, weight)
+        return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -128,150 +132,73 @@ def remove_edge(source, target):
     graph = user_session['graph']
     
     try:
-        graph.remove_edge(source, target)
-        return jsonify({'status': 'success'})
+        success = graph.remove_edge(int(source), int(target))
+        return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/graph/adjacency_matrix', methods=['GET'])
-def get_adjacency_matrix():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        matrix = graph.get_adjacency_matrix()
-        return jsonify({'matrix': matrix})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/graph/adjacency_list', methods=['GET'])
-def get_adjacency_list():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        adj_list = graph.get_adjacency_list()
-        return jsonify({'adjacency_list': adj_list})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/dfs', methods=['POST'])
-def run_dfs():
+# Алгоритмы
+@app.route('/api/algorithm/<algorithm_name>', methods=['POST'])
+def run_algorithm(algorithm_name):
     user_session = get_user_session()
     data = request.json
     graph = user_session['graph']
     
-    start_vertex = data.get('start_vertex')
-    
     try:
-        result = orgraph_core.dfs(graph, start_vertex)
+        if algorithm_name == 'dijkstra':
+            start = int(data.get('start_vertex', 0))
+            end = int(data.get('end_vertex', 0))
+            result = graph.dijkstra(start, end)
+            
+        elif algorithm_name == 'prim':
+            result = graph.prim()
+            
+        elif algorithm_name == 'ford_bellman':
+            start = int(data.get('start_vertex', 0))
+            result = graph.ford_bellman(start)
+            
+        elif algorithm_name == 'floyd_warshall':
+            start = int(data.get('start_vertex', 0))
+            end = int(data.get('end_vertex', 0))
+            result = graph.floyd_warshall(start, end)
+            
+        elif algorithm_name == 'euler_path':
+            result = graph.find_eulerian_path()
+            
+        elif algorithm_name == 'hamiltonian_path':
+            result = graph.find_hamiltonian_path()
+            
+        elif algorithm_name == 'topological_sort':
+            result = graph.topological_sort()
+            
+        elif algorithm_name == 'is_connected':
+            result = graph.is_connected()
+            return jsonify({'result': {'connected': result}})
+            
+        elif algorithm_name == 'find_components':
+            result = graph.find_components()
+            return jsonify({'result': {'components': result}})
+            
+        elif algorithm_name == 'is_bipartite':
+            result = graph.is_bipartite()
+            return jsonify({'result': {'bipartite': result}})
+            
+        elif algorithm_name == 'minimum_spanning_tree':
+            result = graph.minimum_spanning_tree()
+            
+        elif algorithm_name == 'dfs':
+            start = int(data.get('start_vertex', 0))
+            result = graph.dfs(start)
+            
+        elif algorithm_name == 'bfs':
+            start = int(data.get('start_vertex', 0))
+            result = graph.bfs(start)
+            
+        else:
+            return jsonify({'error': f'Algorithm {algorithm_name} not found'}), 404
+        
         return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/bfs', methods=['POST'])
-def run_bfs():
-    user_session = get_user_session()
-    data = request.json
-    graph = user_session['graph']
-    
-    start_vertex = data.get('start_vertex')
-    
-    try:
-        result = orgraph_core.bfs(graph, start_vertex)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/dijkstra', methods=['POST'])
-def run_dijkstra():
-    user_session = get_user_session()
-    data = request.json
-    graph = user_session['graph']
-    
-    start_vertex = data.get('start_vertex')
-    end_vertex = data.get('end_vertex')
-    
-    try:
-        result = orgraph_core.dijkstra(graph, start_vertex, end_vertex)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/topological_sort', methods=['POST'])
-def run_topological_sort():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.topological_sort(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/is_connected', methods=['POST'])
-def check_connectivity():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.is_connected(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/find_components', methods=['POST'])
-def find_components():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.find_components(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/is_bipartite', methods=['POST'])
-def check_bipartite():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.is_bipartite(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/minimum_spanning_tree', methods=['POST'])
-def find_mst():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.minimum_spanning_tree(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/find_eulerian_path', methods=['POST'])
-def find_eulerian_path():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.find_eulerian_path(graph)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/algorithm/find_hamiltonian_path', methods=['POST'])
-def find_hamiltonian_path():
-    user_session = get_user_session()
-    graph = user_session['graph']
-    
-    try:
-        result = orgraph_core.find_hamiltonian_path(graph)
-        return jsonify({'result': result})
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -279,19 +206,22 @@ def find_hamiltonian_path():
 def undo_action():
     user_session = get_user_session()
     
-    if user_session['history_index'] > 0:
-        user_session['history_index'] -= 1
-        state = user_session['history'][user_session['history_index']]
+    if session['history_index'] > 0:
+        session['history_index'] -= 1
+        state = session['history'][session['history_index']]
         
-        # Restore graph from state
-        graph = user_session['graph']
+        # Восстанавливаем граф из состояния
+        graph = session['graph']
         graph.clear()
         
-        for vertex in state['vertices']:
-            graph.add_vertex(vertex)
+        # Восстанавливаем вершины
+        for vertex_id in state['vertices']:
+            graph.add_vertex(str(vertex_id))
         
+        # Восстанавливаем ребра
         for edge in state['edges']:
-            graph.add_edge(edge['source'], edge['target'], edge.get('weight', 1.0), edge.get('directed', False))
+            # edge = (from, to, weight, directed)
+            graph.add_edge(edge[0], edge[1], edge[2])
         
         return jsonify({'status': 'success'})
     else:
@@ -301,53 +231,71 @@ def undo_action():
 def redo_action():
     user_session = get_user_session()
     
-    if user_session['history_index'] < len(user_session['history']) - 1:
-        user_session['history_index'] += 1
-        state = user_session['history'][user_session['history_index']]
+    if session['history_index'] < len(session['history']) - 1:
+        session['history_index'] += 1
+        state = session['history'][session['history_index']]
         
-        # Restore graph from state
-        graph = user_session['graph']
+        # Восстанавливаем граф из состояния
+        graph = session['graph']
         graph.clear()
         
-        for vertex in state['vertices']:
-            graph.add_vertex(vertex)
+        # Восстанавливаем вершины
+        for vertex_id in state['vertices']:
+            graph.add_vertex(str(vertex_id))
         
+        # Восстанавливаем ребра
         for edge in state['edges']:
-            graph.add_edge(edge['source'], edge['target'], edge.get('weight', 1.0), edge.get('directed', False))
+            graph.add_edge(edge[0], edge[1], edge[2])
         
         return jsonify({'status': 'success'})
     else:
         return jsonify({'error': 'No more actions to redo'}), 400
 
+# Генерация графов
 @app.route('/api/graph/random', methods=['POST'])
 def generate_random_graph():
     user_session = get_user_session()
     data = request.json
     
-    num_vertices = data.get('num_vertices', 10)
-    num_edges = data.get('num_edges', 15)
-    directed = data.get('directed', False)
-    weighted = data.get('weighted', False)
+    num_vertices = int(data.get('num_vertices', 10))
+    num_edges = int(data.get('num_edges', 15))
+    directed = bool(data.get('directed', False))
+    weighted = bool(data.get('weighted', False))
     
     save_graph_state()
-    graph = user_session['graph']
+    
+    # Используем встроенный генератор
+    import random
+    graph = session['graph']
     graph.clear()
     
-    # Add vertices
+    # Добавляем вершины
     for i in range(num_vertices):
         graph.add_vertex(f"v{i}")
     
-    # Add random edges
-    import random
-    for _ in range(num_edges):
-        source = f"v{random.randint(0, num_vertices-1)}"
-        target = f"v{random.randint(0, num_vertices-1)}"
-        
-        if source != target:  # Avoid self-loops
-            weight = random.uniform(1.0, 10.0) if weighted else 1.0
-            graph.add_edge(source, target, weight, directed)
+    # Добавляем случайные ребра
+    max_possible_edges = num_vertices * (num_vertices - 1)
+    if not directed:
+        max_possible_edges //= 2
     
-    return jsonify({'status': 'success'})
+    num_edges = min(num_edges, max_possible_edges)
+    
+    edges_added = 0
+    attempts = 0
+    max_attempts = num_edges * 10
+    
+    while edges_added < num_edges and attempts < max_attempts:
+        from_vertex = random.randint(0, num_vertices - 1)
+        to_vertex = random.randint(0, num_vertices - 1)
+        
+        if from_vertex != to_vertex:
+            weight = random.uniform(1, 10) if weighted else 1.0
+            if graph.add_edge(from_vertex, to_vertex, weight):
+                edges_added += 1
+        
+        attempts += 1
+    
+    return jsonify({'status': 'success', 'edges_added': edges_added})
 
 @app.route('/api/graph/classic', methods=['POST'])
 def generate_classic_graph():
@@ -355,110 +303,41 @@ def generate_classic_graph():
     data = request.json
     
     graph_type = data.get('type', 'complete')
+    num_vertices = int(data.get('num_vertices', 5))
+    directed = bool(data.get('directed', False))
     
     save_graph_state()
-    graph = user_session['graph']
+    graph = session['graph']
     graph.clear()
     
+    # Добавляем вершины
+    for i in range(num_vertices):
+        graph.add_vertex(f"v{i}")
+    
+    # Создаем классический граф
     if graph_type == 'complete':
-        # Complete graph K5
-        for i in range(5):
-            graph.add_vertex(f"v{i}")
-        
-        for i in range(5):
-            for j in range(i+1, 5):
-                graph.add_edge(f"v{i}", f"v{j}")
+        # Полный граф K_n
+        for i in range(num_vertices):
+            for j in range(i + 1, num_vertices):
+                graph.add_edge(i, j, 1.0)
+                if directed:
+                    graph.add_edge(j, i, 1.0)
     
     elif graph_type == 'cycle':
-        # Cycle graph C5
-        for i in range(5):
-            graph.add_vertex(f"v{i}")
-        
-        for i in range(5):
-            graph.add_edge(f"v{i}", f"v{(i+1)%5}")
+        # Цикл C_n
+        for i in range(num_vertices):
+            graph.add_edge(i, (i + 1) % num_vertices, 1.0)
+            if directed:
+                graph.add_edge((i + 1) % num_vertices, i, 1.0)
     
-    elif graph_type == 'bipartite':
-        # Complete bipartite graph K3,3
-        for i in range(3):
-            graph.add_vertex(f"a{i}")
-            graph.add_vertex(f"b{i}")
-        
-        for i in range(3):
-            for j in range(3):
-                graph.add_edge(f"a{i}", f"b{j}")
-    
-    elif graph_type == 'tree':
-        # Binary tree
-        for i in range(7):
-            graph.add_vertex(f"v{i}")
-        
-        graph.add_edge("v0", "v1")
-        graph.add_edge("v0", "v2")
-        graph.add_edge("v1", "v3")
-        graph.add_edge("v1", "v4")
-        graph.add_edge("v2", "v5")
-        graph.add_edge("v2", "v6")
+    elif graph_type == 'path':
+        # Путь P_n
+        for i in range(num_vertices - 1):
+            graph.add_edge(i, i + 1, 1.0)
+            if directed:
+                graph.add_edge(i + 1, i, 1.0)
     
     return jsonify({'status': 'success'})
-
-@app.route('/api/graph/save', methods=['POST'])
-def save_graph():
-    user_session = get_user_session()
-    data = request.json
-    
-    filename = data.get('filename', 'graph.json')
-    if not filename.endswith('.json'):
-        filename += '.json'
-    
-    filename = secure_filename(filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    
-    graph = user_session['graph']
-    graph_data = {
-        'vertices': graph.get_vertices(),
-        'edges': graph.get_edges()
-    }
-    
-    with open(filepath, 'w') as f:
-        json.dump(graph_data, f)
-    
-    return jsonify({'status': 'success', 'filename': filename})
-
-@app.route('/api/graph/load', methods=['POST'])
-def load_graph():
-    user_session = get_user_session()
-    
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if file:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        save_graph_state()
-        graph = user_session['graph']
-        graph.clear()
-        
-        with open(filepath, 'r') as f:
-            graph_data = json.load(f)
-        
-        for vertex in graph_data.get('vertices', []):
-            graph.add_vertex(vertex)
-        
-        for edge in graph_data.get('edges', []):
-            graph.add_edge(
-                edge['source'], 
-                edge['target'], 
-                edge.get('weight', 1.0), 
-                edge.get('directed', False)
-            )
-        
-        return jsonify({'status': 'success', 'vertices': graph.get_vertices(), 'edges': graph.get_edges()})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
