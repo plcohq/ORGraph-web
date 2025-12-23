@@ -1,5 +1,5 @@
-#include "deijkstra_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/deijkstra_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <set>
 #include <vector>
@@ -46,7 +46,7 @@ std::string Deijkstra(const Graph& graph, int start_vertex, int end_vertex) {
         }
 
         // Получаем всех соседей текущей вершины
-        std::vector<int> neighbors = graph.getNeighbors(current_vertex);
+        std::vector<int> neighbors = graph.getNeighborsVertex(current_vertex);
         
         for (int neighbor : neighbors) {
             if (visited[neighbor]) continue;

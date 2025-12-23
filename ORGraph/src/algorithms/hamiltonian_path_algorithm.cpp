@@ -1,5 +1,5 @@
-#include "hamiltonian_path_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/hamiltonian_path_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <bitset>
@@ -22,7 +22,7 @@ std::string FindHamiltonianPath(const Graph& graph) {
     // Создаем матрицу смежности для быстрого доступа
     std::vector<std::vector<bool>> adjacency(n, std::vector<bool>(n, false));
     for (int i = 0; i < n; ++i) {
-        std::vector<int> neighbors = graph.getNeighbors(i);
+        std::vector<int> neighbors = graph.getNeighborsVertex(i);
         for (int neighbor : neighbors) {
             adjacency[i][neighbor] = true;
         }

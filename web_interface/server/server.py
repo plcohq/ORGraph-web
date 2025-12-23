@@ -5,8 +5,9 @@ import os
 import uuid
 import json
 import tempfile
-
-app = Flask(__name__, static_folder='../frontend', static_url_path='')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, '..', 'static')
+app = Flask(__name__, static_folder=STATIC_DIR, static_url_path='')
 
 # Конфигурация сессии
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -14,26 +15,63 @@ app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = tempfile.mkdtemp()
 Session(app)
 
-def get_user_session():
-    """Получить или создать сессию пользователя"""
+def get_user_graph():
+    """Получить или создать граф пользователя из сессии"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
-        session['graph'] = orgraph_core.Graph()
+        session['graph_data'] = {
+            'vertices': [],  # Список вершин с их данными
+            'edges': [],     # Список рёбер: (from, to, weight)
+        }
         session['history'] = []
         session['history_index'] = -1
-    return session
-
-def save_graph_state():
-    """Сохранить состояние графа для undo/redo"""
-    current_graph = session['graph']
     
+    # Инициализируем graph_data, если его нет
+    if 'graph_data' not in session:
+        session['graph_data'] = {
+            'vertices': [],
+            'edges': [],
+        }
+    
+    # Инициализируем историю, если её нет
+    if 'history' not in session:
+        session['history'] = []
+        session['history_index'] = -1
+    
+    # Создаём объект графа из данных сессии
+    graph = orgraph_core.Graph()
+    
+    # Восстанавливаем вершины
+    for vertex_data in session['graph_data']['vertices']:
+        graph.add_vertex(vertex_data['label'])
+    
+    # Восстанавливаем рёбра
+    for edge in session['graph_data']['edges']:
+        graph.add_edge(edge[0], edge[1], edge[2])
+    
+    return graph
+
+def save_graph_state(graph):
+    """Сохранить состояние графа для undo/redo и обновить данные сессии"""
     # Получаем текущее состояние
-    vertices = current_graph.get_vertices()
-    edges = current_graph.get_edges()
+    vertices = graph.get_vertices()
+    edges = graph.get_edges()
+    
+    # Собираем данные о вершинах с их метками
+    vertices_data = []
+    for i, vertex_id in enumerate(vertices):
+        # Предполагаем, что у вершины есть метод get_label() или используем ID как метку
+        try:
+            label = graph.get_vertex_label(vertex_id)
+        except:
+            label = f"v{vertex_id}"
+        vertices_data.append({'id': vertex_id, 'label': label})
+    
+    edges_data = [list(edge) for edge in edges]  # Преобразуем tuple в list
     
     graph_state = {
-        'vertices': list(vertices),
-        'edges': [list(edge) for edge in edges]  # Преобразуем tuple в list
+        'vertices': vertices_data,
+        'edges': edges_data
     }
     
     # Удаляем состояния после текущего индекса
@@ -42,16 +80,60 @@ def save_graph_state():
     # Добавляем новое состояние
     session['history'].append(graph_state)
     session['history_index'] += 1
+    
+    # Обновляем текущие данные графа в сессии
+    session['graph_data'] = graph_state
+
+def update_session_from_graph(graph):
+    """Обновить данные сессии из текущего состояния графа"""
+    vertices = graph.get_vertices()
+    edges = graph.get_edges()
+    
+    vertices_data = []
+    for i, vertex_id in enumerate(vertices):
+        try:
+            label = graph.get_vertex_label(vertex_id)
+        except:
+            label = f"v{vertex_id}"
+        vertices_data.append({'id': vertex_id, 'label': label})
+    
+    edges_data = [list(edge) for edge in edges]
+    
+    session['graph_data'] = {
+        'vertices': vertices_data,
+        'edges': edges_data
+    }
 
 # Маршруты API
 @app.route('/')
 def index():
-    return send_from_directory(app.static_folder, 'index.html')
+    # Путь к index.html внутри папки assets
+    return send_from_directory(os.path.join(app.static_folder, 'assets'), 'index.html')
 
+@app.route('/index.html')
+def index_html():
+    return send_from_directory(os.path.join(app.static_folder, 'assets'), 'index.html')
+@app.route('/<path:filename>')
+def static_files(filename):
+    # Пробуем найти файл в разных папках
+    possible_paths = [
+        os.path.join(app.static_folder, 'assets', filename),
+        os.path.join(app.static_folder, 'css', filename),
+        os.path.join(app.static_folder, 'js', filename),
+        os.path.join(app.static_folder, filename),
+    ]
+    
+    for file_path in possible_paths:
+        if os.path.exists(file_path):
+            return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
+    
+    return "File not found", 404
 @app.route('/api/graph', methods=['GET'])
 def get_graph():
-    user_session = get_user_session()
-    graph = user_session['graph']
+    if 'user_id' not in session:
+        return jsonify({'vertices': [], 'edges': []})
+    
+    graph = get_user_graph()
     
     try:
         # Получаем граф в формате JSON
@@ -67,53 +149,77 @@ def get_graph():
 
 @app.route('/api/graph/clear', methods=['POST'])
 def clear_graph():
-    user_session = get_user_session()
-    save_graph_state()
-    user_session['graph'].clear()
+    # Создаем или получаем сессию
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    
+    # Инициализируем данные графа, если их нет
+    if 'graph_data' not in session:
+        session['graph_data'] = {'vertices': [], 'edges': []}
+    
+    # Получаем текущий граф (содержащий текущие данные)
+    graph = get_user_graph()
+    
+    # Сохраняем текущее состояние для undo
+    save_graph_state(graph)
+    
+    # Очищаем граф
+    graph.clear()
+    
+    # Обновляем сессию с пустым графом
+    update_session_from_graph(graph)
     
     return jsonify({'status': 'success'})
 
 @app.route('/api/vertex', methods=['POST'])
 def add_vertex():
-    user_session = get_user_session()
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    
     data = request.json
     
     if not data or 'id' not in data:
         return jsonify({'error': 'Vertex ID is required'}), 400
     
-    save_graph_state()
-    graph = user_session['graph']
+    graph = get_user_graph()
+    save_graph_state(graph)
     
     try:
         # В нашей реализации вершины добавляются с автоинкрементом ID
         # Метка используется для отображения
         vertex_id = graph.add_vertex(str(data['id']))
+        update_session_from_graph(graph)
         return jsonify({'status': 'success', 'id': vertex_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/vertex/<vertex_id>', methods=['DELETE'])
 def remove_vertex(vertex_id):
-    user_session = get_user_session()
-    save_graph_state()
-    graph = user_session['graph']
+    if 'user_id' not in session:
+        return jsonify({'error': 'No session found'}), 400
+    
+    graph = get_user_graph()
+    save_graph_state(graph)
     
     try:
         success = graph.remove_vertex(int(vertex_id))
+        update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/edge', methods=['POST'])
 def add_edge():
-    user_session = get_user_session()
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    
     data = request.json
     
     if not data or 'source' not in data or 'target' not in data:
         return jsonify({'error': 'Source and target vertices are required'}), 400
     
-    save_graph_state()
-    graph = user_session['graph']
+    graph = get_user_graph()
+    save_graph_state(graph)
     
     source = int(data['source'])
     target = int(data['target'])
@@ -121,18 +227,22 @@ def add_edge():
     
     try:
         success = graph.add_edge(source, target, weight)
+        update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/edge/<source>/<target>', methods=['DELETE'])
 def remove_edge(source, target):
-    user_session = get_user_session()
-    save_graph_state()
-    graph = user_session['graph']
+    if 'user_id' not in session:
+        return jsonify({'error': 'No session found'}), 400
+    
+    graph = get_user_graph()
+    save_graph_state(graph)
     
     try:
         success = graph.remove_edge(int(source), int(target))
+        update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -140,9 +250,11 @@ def remove_edge(source, target):
 # Алгоритмы
 @app.route('/api/algorithm/<algorithm_name>', methods=['POST'])
 def run_algorithm(algorithm_name):
-    user_session = get_user_session()
+    if 'user_id' not in session:
+        return jsonify({'error': 'No session found'}), 400
+    
     data = request.json
-    graph = user_session['graph']
+    graph = get_user_graph()
     
     try:
         if algorithm_name == 'dijkstra':
@@ -204,57 +316,36 @@ def run_algorithm(algorithm_name):
 
 @app.route('/api/undo', methods=['POST'])
 def undo_action():
-    user_session = get_user_session()
-    
-    if session['history_index'] > 0:
-        session['history_index'] -= 1
-        state = session['history'][session['history_index']]
-        
-        # Восстанавливаем граф из состояния
-        graph = session['graph']
-        graph.clear()
-        
-        # Восстанавливаем вершины
-        for vertex_id in state['vertices']:
-            graph.add_vertex(str(vertex_id))
-        
-        # Восстанавливаем ребра
-        for edge in state['edges']:
-            # edge = (from, to, weight, directed)
-            graph.add_edge(edge[0], edge[1], edge[2])
-        
-        return jsonify({'status': 'success'})
-    else:
+    if 'user_id' not in session or session['history_index'] <= 0:
         return jsonify({'error': 'No more actions to undo'}), 400
+    
+    session['history_index'] -= 1
+    state = session['history'][session['history_index']]
+    
+    # Обновляем данные графа в сессии
+    session['graph_data'] = state
+    
+    return jsonify({'status': 'success'})
 
 @app.route('/api/redo', methods=['POST'])
 def redo_action():
-    user_session = get_user_session()
-    
-    if session['history_index'] < len(session['history']) - 1:
-        session['history_index'] += 1
-        state = session['history'][session['history_index']]
-        
-        # Восстанавливаем граф из состояния
-        graph = session['graph']
-        graph.clear()
-        
-        # Восстанавливаем вершины
-        for vertex_id in state['vertices']:
-            graph.add_vertex(str(vertex_id))
-        
-        # Восстанавливаем ребра
-        for edge in state['edges']:
-            graph.add_edge(edge[0], edge[1], edge[2])
-        
-        return jsonify({'status': 'success'})
-    else:
+    if 'user_id' not in session or session['history_index'] >= len(session['history']) - 1:
         return jsonify({'error': 'No more actions to redo'}), 400
+    
+    session['history_index'] += 1
+    state = session['history'][session['history_index']]
+    
+    # Обновляем данные графа в сессии
+    session['graph_data'] = state
+    
+    return jsonify({'status': 'success'})
 
 # Генерация графов
 @app.route('/api/graph/random', methods=['POST'])
 def generate_random_graph():
-    user_session = get_user_session()
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    
     data = request.json
     
     num_vertices = int(data.get('num_vertices', 10))
@@ -262,11 +353,10 @@ def generate_random_graph():
     directed = bool(data.get('directed', False))
     weighted = bool(data.get('weighted', False))
     
-    save_graph_state()
+    graph = get_user_graph()
+    save_graph_state(graph)
     
-    # Используем встроенный генератор
-    import random
-    graph = session['graph']
+    # Очищаем текущий граф
     graph.clear()
     
     # Добавляем вершины
@@ -274,6 +364,7 @@ def generate_random_graph():
         graph.add_vertex(f"v{i}")
     
     # Добавляем случайные ребра
+    import random
     max_possible_edges = num_vertices * (num_vertices - 1)
     if not directed:
         max_possible_edges //= 2
@@ -295,19 +386,25 @@ def generate_random_graph():
         
         attempts += 1
     
+    update_session_from_graph(graph)
+    
     return jsonify({'status': 'success', 'edges_added': edges_added})
 
 @app.route('/api/graph/classic', methods=['POST'])
 def generate_classic_graph():
-    user_session = get_user_session()
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    
     data = request.json
     
     graph_type = data.get('type', 'complete')
     num_vertices = int(data.get('num_vertices', 5))
     directed = bool(data.get('directed', False))
     
-    save_graph_state()
-    graph = session['graph']
+    graph = get_user_graph()
+    save_graph_state(graph)
+    
+    # Очищаем текущий граф
     graph.clear()
     
     # Добавляем вершины
@@ -336,6 +433,8 @@ def generate_classic_graph():
             graph.add_edge(i, i + 1, 1.0)
             if directed:
                 graph.add_edge(i + 1, i, 1.0)
+    
+    update_session_from_graph(graph)
     
     return jsonify({'status': 'success'})
 

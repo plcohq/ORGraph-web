@@ -1,5 +1,5 @@
-#include "prim_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/prim_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <set>
@@ -50,7 +50,7 @@ std::string Prim(const Graph& graph) {
         }
         
         // Обрабатываем всех соседей текущей вершины
-        std::vector<int> neighbors = graph.getNeighbors(current_vertex);
+        std::vector<int> neighbors = graph.getNeighborsVertex(current_vertex);
         
         for (int neighbor : neighbors) {
             if (in_mst[neighbor]) continue;

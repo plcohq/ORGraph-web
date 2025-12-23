@@ -1,5 +1,5 @@
-#include "euler_path_algorithm.h"
-#include "Graph.h"
+#include "../../include/algorithms/euler_path_algorithm.h"
+#include "../../include/Graph.h"
 #include "nlohmann/json.hpp"
 #include <vector>
 #include <set>
@@ -61,7 +61,7 @@ std::string FindEulerPath(const Graph& graph) {
     
     // Заполняем списки смежности
     for (int i = 0; i < n; ++i) {
-        std::vector<int> neighbors = graph.getNeighbors(i);
+        std::vector<int> neighbors = graph.getNeighborsVertex(i);
         for (int neighbor : neighbors) {
             if (!used_edges[i][neighbor]) {
                 adjacency_list[i].insert(neighbor);

@@ -954,7 +954,86 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Локальное добавление ребра
+   // Локальное добавление ребра
+function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
+    const fromNode = nodesData.get(parseInt(fromId));
+    const toNode = (fromId !== toId) ? nodesData.get(parseInt(toId)) : fromNode;
+    
+    if (!fromNode) {
+        console.error(`Вершина ${fromId} не существует!`);
+        return null;
+    }
+    
+    if (fromId === toId) {
+        // Проверяем петлю
+        let loopExists = false;
+        edgesData.forEach(edge => {
+            if (edge.from === fromId && edge.to === fromId) {
+                loopExists = true;
+            }
+        });
+        
+        if (loopExists) {
+            console.warn(`Петля в вершине ${fromId} уже существует!`);
+            return null;
+        }
+    } else {
+        // Проверяем существующее ребро
+        let exists = false;
+        edgesData.forEach(edge => {
+            if (directed) {
+                if (edge.from === fromId && edge.to === toId) {
+                    exists = true;
+                }
+            } else {
+                if ((edge.from === fromId && edge.to === toId) || 
+                    (edge.from === toId && edge.to === fromId)) {
+                    exists = true;
+                }
+            }
+        });
+        if (exists) {
+            console.warn(`Ребро ${fromId}-${toId} уже существует!`);
+            return null;
+        }
+    }
+    
+    const edgeId = edgeIdCounter++;
+    const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    edgeGroup.setAttribute('data-edge-id', edgeId);
+    
+    let lineElement;
+    if (fromId === toId) {
+        lineElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        lineElement.setAttribute('stroke', '#666');
+        lineElement.setAttribute('stroke-width', '2');
+        lineElement.setAttribute('fill', 'none');
+    } else {
+        lineElement = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        lineElement.setAttribute('stroke', '#666');
+        lineElement.setAttribute('stroke-width', '2');
+    }
+    
+    edgeGroup.appendChild(lineElement);
+    graphElements.appendChild(edgeGroup);
+    
+    edgesData.set(edgeId, {
+        from: parseInt(fromId),
+        to: parseInt(toId),
+        weight: weight,
+        directed: directed,
+        element: lineElement,
+        group: edgeGroup,
+        text: null,
+        arrow: null
+    });
+    
+    updateEdgeVisuals(edgeId);
+    selectElement(lineElement);
+    
+    console.log(`Создано ребро: ${fromId} -> ${toId}, вес: ${weight}, направленное: ${directed}`);
+    return edgeId;
+} // Локальное добавление ребра
     function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         const fromNode = nodesData.get(parseInt(fromId));
         const toNode = (fromId !== toId) ? nodesData.get(parseInt(toId)) : fromNode;
@@ -1155,6 +1234,8 @@ document.addEventListener('DOMContentLoaded', () => {
         selectElement(null);
         saveState('create-random-graph', { numNodes, numEdges, directed, weighted });
     }
+    
+
     
     async function createClassicGraphByType(numNodes, type, directed) {
         saveState('before-create-classic-graph');
