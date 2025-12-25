@@ -148,8 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const saveState = (actionType, data = null) => {
         const state = {
-            nodes: new Map(nodesData),
-            edges: new Map(edgesData),
+            nodes: new Map(),
+            edges: new Map(),
             nextNodeId,
             edgeIdCounter,
             actionType,
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             timestamp: Date.now()
         };
         
-        state.nodes = new Map();
+        // Сохраняем узлы
         nodesData.forEach((node, id) => {
             state.nodes.set(id, {
                 x: node.x,
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        state.edges = new Map();
+        // Сохраняем ребра
         edgesData.forEach((edge, id) => {
             state.edges.set(id, {
                 from: edge.from,
@@ -196,12 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
         nodesData.clear();
         edgesData.clear();
         
+        // Восстанавливаем вершины
         state.nodes.forEach((nodeData, id) => {
             const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             nodeGroup.setAttribute('class', 'node');
             nodeGroup.setAttribute('data-node-id', id);
             nodeGroup.setAttribute('transform', `translate(${nodeData.x}, ${nodeData.y})`);
-    
+
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', '0');
             circle.setAttribute('cy', '0');
@@ -209,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             circle.setAttribute('fill', 'white');
             circle.setAttribute('stroke', 'black');
             circle.setAttribute('stroke-width', '2');
-    
+
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', '0');
             text.setAttribute('y', '5');
@@ -218,14 +219,15 @@ document.addEventListener('DOMContentLoaded', () => {
             text.setAttribute('font-weight', 'bold');
             text.setAttribute('font-size', '16');
             text.textContent = id;
-    
+
             nodeGroup.appendChild(circle);
             nodeGroup.appendChild(text);
             graphElements.appendChild(nodeGroup);
-    
+
             nodesData.set(id, { x: nodeData.x, y: nodeData.y, element: nodeGroup });
         });
         
+        // Восстанавливаем ребра
         state.edges.forEach((edgeData, id) => {
             const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             edgeGroup.setAttribute('data-edge-id', id);
@@ -344,24 +346,44 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             
             const data = await response.json();
+            console.log('Server graph data:', data);
             
             // Очищаем локальный граф
-            clearGraph();
+            await clearGraph(true);
             
             // Создаем вершины с сервера
             if (data.vertices && Array.isArray(data.vertices)) {
-                data.vertices.forEach(vertexId => {
-                    const x = viewBox.x + viewBox.width / 2 + (Math.random() - 0.5) * 100;
-                    const y = viewBox.y + viewBox.height / 2 + (Math.random() - 0.5) * 100;
-                    createVertexLocal(x, y, parseInt(vertexId));
-                });
+                for (const vertexIdStr of data.vertices) {
+                    const vertexId = parseInt(vertexIdStr);
+                    if (!isNaN(vertexId)) {
+                        const x = viewBox.x + viewBox.width / 2 + (Math.random() - 0.5) * 100;
+                        const y = viewBox.y + viewBox.height / 2 + (Math.random() - 0.5) * 100;
+                        createVertexLocal(x, y, vertexId);
+                    }
+                }
             }
             
             // Создаем ребра с сервера
             if (data.edges && Array.isArray(data.edges)) {
-                data.edges.forEach(edge => {
-                    addEdgeLocal(edge.source || edge.from, edge.target || edge.to, edge.weight || 1, edge.directed || false);
-                });
+                for (const edge of data.edges) {
+                    let from, to, weight, directed;
+                    
+                    if (typeof edge === 'object') {
+                        from = parseInt(edge.source || edge.from);
+                        to = parseInt(edge.target || edge.to);
+                        weight = parseFloat(edge.weight) || 1;
+                        directed = edge.directed || false;
+                    } else if (Array.isArray(edge) && edge.length >= 2) {
+                        from = parseInt(edge[0]);
+                        to = parseInt(edge[1]);
+                        weight = parseFloat(edge[2]) || 1;
+                        directed = edge[3] || false;
+                    }
+                    
+                    if (!isNaN(from) && !isNaN(to)) {
+                        addEdgeLocal(from, to, weight, directed);
+                    }
+                }
             }
             
             console.log('Graph loaded from server:', data);
@@ -954,92 +976,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-   // Локальное добавление ребра
-function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
-    const fromNode = nodesData.get(parseInt(fromId));
-    const toNode = (fromId !== toId) ? nodesData.get(parseInt(toId)) : fromNode;
-    
-    if (!fromNode) {
-        console.error(`Вершина ${fromId} не существует!`);
-        return null;
-    }
-    
-    if (fromId === toId) {
-        // Проверяем петлю
-        let loopExists = false;
-        edgesData.forEach(edge => {
-            if (edge.from === fromId && edge.to === fromId) {
-                loopExists = true;
-            }
-        });
-        
-        if (loopExists) {
-            console.warn(`Петля в вершине ${fromId} уже существует!`);
-            return null;
-        }
-    } else {
-        // Проверяем существующее ребро
-        let exists = false;
-        edgesData.forEach(edge => {
-            if (directed) {
-                if (edge.from === fromId && edge.to === toId) {
-                    exists = true;
-                }
-            } else {
-                if ((edge.from === fromId && edge.to === toId) || 
-                    (edge.from === toId && edge.to === fromId)) {
-                    exists = true;
-                }
-            }
-        });
-        if (exists) {
-            console.warn(`Ребро ${fromId}-${toId} уже существует!`);
-            return null;
-        }
-    }
-    
-    const edgeId = edgeIdCounter++;
-    const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    edgeGroup.setAttribute('data-edge-id', edgeId);
-    
-    let lineElement;
-    if (fromId === toId) {
-        lineElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        lineElement.setAttribute('stroke', '#666');
-        lineElement.setAttribute('stroke-width', '2');
-        lineElement.setAttribute('fill', 'none');
-    } else {
-        lineElement = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        lineElement.setAttribute('stroke', '#666');
-        lineElement.setAttribute('stroke-width', '2');
-    }
-    
-    edgeGroup.appendChild(lineElement);
-    graphElements.appendChild(edgeGroup);
-    
-    edgesData.set(edgeId, {
-        from: parseInt(fromId),
-        to: parseInt(toId),
-        weight: weight,
-        directed: directed,
-        element: lineElement,
-        group: edgeGroup,
-        text: null,
-        arrow: null
-    });
-    
-    updateEdgeVisuals(edgeId);
-    selectElement(lineElement);
-    
-    console.log(`Создано ребро: ${fromId} -> ${toId}, вес: ${weight}, направленное: ${directed}`);
-    return edgeId;
-} // Локальное добавление ребра
+    // Локальное добавление ребра
     function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         const fromNode = nodesData.get(parseInt(fromId));
         const toNode = (fromId !== toId) ? nodesData.get(parseInt(toId)) : fromNode;
         
         if (!fromNode) {
-            alert('Невозможно создать ребро для несуществующей вершины!');
+            console.error(`Вершина ${fromId} не существует!`);
             return null;
         }
         
@@ -1053,7 +996,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
             });
             
             if (loopExists) {
-                alert('Петля в этой вершине уже существует!');
+                console.warn(`Петля в вершине ${fromId} уже существует!`);
                 return null;
             }
         } else {
@@ -1072,6 +1015,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
                 }
             });
             if (exists) {
+                console.warn(`Ребро ${fromId}-${toId} уже существует!`);
                 return null;
             }
         }
@@ -1109,6 +1053,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         updateEdgeVisuals(edgeId);
         selectElement(lineElement);
         
+        console.log(`Создано ребро: ${fromId} -> ${toId}, вес: ${weight}, направленное: ${directed}`);
         return edgeId;
     }
     
@@ -1154,8 +1099,10 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         editEdgeModal.style.display = 'flex';
     }
     
-    async function clearGraph() {
-        saveState('before-clear-graph');
+    async function clearGraph(skipSaveState = false) {
+        if (!skipSaveState) {
+            saveState('before-clear-graph');
+        }
         
         graphElements.innerHTML = '';
         nodesData.clear();
@@ -1170,7 +1117,9 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         firstSelectedNodeForEdge = null;
         updateViewBox();
         
-        saveState('clear-graph');
+        if (!skipSaveState) {
+            saveState('clear-graph');
+        }
         
         // Синхронизируем с сервером
         try {
@@ -1181,115 +1130,228 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
     }
     
     async function createRandomGraph(numNodes, numEdges, directed, weighted) {
+        // Сохраняем состояние ДО очистки
         saveState('before-create-random-graph');
         
-        await clearGraph();
+        // Очищаем текущий граф
+        await clearGraph(true); // true = не сохранять еще одно состояние
         
         try {
-            await createRandomGraphOnServer(numNodes, numEdges, directed, weighted);
+            // Создаем граф на сервере
+            const serverSuccess = await createRandomGraphOnServer(numNodes, numEdges, directed, weighted);
             
-            // Загружаем с сервера для отображения
-            const serverGraph = await loadGraphFromServer();
-            
-            if (!serverGraph) {
+            if (serverSuccess) {
+                // Загружаем созданный граф с сервера
+                const serverGraph = await loadGraphFromServer();
+                
+                if (!serverGraph) {
+                    // Fallback: создаем локально
+                    await createRandomGraphLocal(numNodes, numEdges, directed, weighted);
+                }
+            } else {
                 // Fallback: создаем локально
-                const createdNodeIds = [];
-                for (let i = 0; i < numNodes; i++) {
-                    const x = viewBox.x + NODE_RADIUS + Math.random() * (viewBox.width - 2 * NODE_RADIUS);
-                    const y = viewBox.y + NODE_RADIUS + Math.random() * (viewBox.height - 2 * NODE_RADIUS);
-                    const nodeGroup = createVertexLocal(x, y, i + 1);
-                    createdNodeIds.push(i + 1);
-                }
-                
-                const maxPossibleEdges = directed ? numNodes * (numNodes - 1) : numNodes * (numNodes - 1) / 2;
-                const edgesToCreate = Math.min(numEdges, maxPossibleEdges);
-                
-                const allPossiblePairs = [];
-                for (let i = 0; i < numNodes; i++) {
-                    for (let j = directed ? 0 : i + 1; j < numNodes; j++) {
-                        if (i !== j) {
-                            allPossiblePairs.push([i + 1, j + 1]);
-                        }
-                    }
-                }
-                
-                // Перемешиваем пары
-                for (let i = allPossiblePairs.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [allPossiblePairs[i], allPossiblePairs[j]] = [allPossiblePairs[j], allPossiblePairs[i]];
-                }
-                
-                // Создаем ребра
-                for (let i = 0; i < Math.min(edgesToCreate, allPossiblePairs.length); i++) {
-                    const [fromId, toId] = allPossiblePairs[i];
-                    let weight = weighted ? Math.floor(Math.random() * 10) + 1 : 1;
-                    addEdgeLocal(fromId, toId, weight, directed);
-                }
+                await createRandomGraphLocal(numNodes, numEdges, directed, weighted);
             }
         } catch (error) {
             console.error('Error creating random graph:', error);
-            alert('Ошибка при создании случайного графа. Проверьте подключение к серверу.');
+            // Создаем локально при ошибке
+            await createRandomGraphLocal(numNodes, numEdges, directed, weighted);
         }
         
         selectElement(null);
         saveState('create-random-graph', { numNodes, numEdges, directed, weighted });
     }
     
-
+    // Вспомогательная функция для локального создания случайного графа
+    async function createRandomGraphLocal(numNodes, numEdges, directed, weighted) {
+        const createdNodeIds = [];
+        
+        // Создаем вершины
+        for (let i = 0; i < numNodes; i++) {
+            const x = viewBox.x + NODE_RADIUS + Math.random() * (viewBox.width - 2 * NODE_RADIUS);
+            const y = viewBox.y + NODE_RADIUS + Math.random() * (viewBox.height - 2 * NODE_RADIUS);
+            const nodeGroup = createVertexLocal(x, y, i + 1);
+            createdNodeIds.push(i + 1);
+            
+            // Синхронизируем вершину с сервером
+            try {
+                await addVertexToServer((i + 1).toString());
+            } catch (error) {
+                console.warn('Failed to sync vertex to server:', error);
+            }
+        }
+        
+        const maxPossibleEdges = directed ? numNodes * (numNodes - 1) : numNodes * (numNodes - 1) / 2;
+        const edgesToCreate = Math.min(numEdges, maxPossibleEdges);
+        
+        const allPossiblePairs = [];
+        for (let i = 0; i < numNodes; i++) {
+            for (let j = directed ? 0 : i + 1; j < numNodes; j++) {
+                if (i !== j) {
+                    allPossiblePairs.push([i + 1, j + 1]);
+                }
+            }
+        }
+        
+        // Перемешиваем пары
+        for (let i = allPossiblePairs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allPossiblePairs[i], allPossiblePairs[j]] = [allPossiblePairs[j], allPossiblePairs[i]];
+        }
+        
+        // Создаем ребра
+        let edgesCreated = 0;
+        for (let i = 0; i < Math.min(edgesToCreate, allPossiblePairs.length); i++) {
+            const [fromId, toId] = allPossiblePairs[i];
+            let weight = weighted ? Math.floor(Math.random() * 10) + 1 : 1;
+            
+            // Проверяем, существует ли уже такое ребро
+            let exists = false;
+            edgesData.forEach(edge => {
+                if (directed) {
+                    if (edge.from === fromId && edge.to === toId) {
+                        exists = true;
+                    }
+                } else {
+                    if ((edge.from === fromId && edge.to === toId) || 
+                        (edge.from === toId && edge.to === fromId)) {
+                        exists = true;
+                    }
+                }
+            });
+            
+            if (!exists) {
+                const edgeId = addEdgeLocal(fromId, toId, weight, directed);
+                if (edgeId) {
+                    edgesCreated++;
+                    
+                    // Синхронизируем ребро с сервером
+                    try {
+                        await addEdgeToServer(fromId, toId, weight, directed);
+                    } catch (error) {
+                        console.warn('Failed to sync edge to server:', error);
+                    }
+                }
+            }
+        }
+        
+        console.log(`Created random graph: ${numNodes} vertices, ${edgesCreated} edges`);
+    }
     
     async function createClassicGraphByType(numNodes, type, directed) {
         saveState('before-create-classic-graph');
         
-        await clearGraph();
+        // Очищаем текущий граф
+        await clearGraph(true);
         
         try {
-            await createClassicGraphOnServer(type, numNodes, directed);
+            // Создаем граф на сервере
+            const serverSuccess = await createClassicGraphOnServer(type, numNodes, directed);
             
-            const serverGraph = await loadGraphFromServer();
-            
-            if (!serverGraph) {
+            if (serverSuccess) {
+                // Загружаем созданный граф с сервера
+                const serverGraph = await loadGraphFromServer();
+                
+                if (!serverGraph) {
+                    // Fallback: создаем локально
+                    await createClassicGraphLocal(numNodes, type, directed);
+                }
+            } else {
                 // Fallback: создаем локально
-                const createdNodeIds = [];
-                const centerX = viewBox.x + viewBox.width / 2;
-                const centerY = viewBox.y + viewBox.height / 2;
-                const radius = Math.min(viewBox.width, viewBox.height) / 3;
-                
-                for (let i = 0; i < numNodes; i++) {
-                    const angle = (i / numNodes) * 2 * Math.PI;
-                    const x = centerX + radius * Math.cos(angle);
-                    const y = centerY + radius * Math.sin(angle);
-                    const nodeGroup = createVertexLocal(x, y, i + 1);
-                    createdNodeIds.push(i + 1);
-                }
-                
-                if (type === 'complete') {
-                    // Полный граф
-                    for (let i = 0; i < numNodes; i++) {
-                        for (let j = directed ? 0 : i + 1; j < numNodes; j++) {
-                            if (i !== j) {
-                                addEdgeLocal(i + 1, j + 1, 1, directed);
-                            }
-                        }
-                    }
-                } else if (type === 'cycle') {
-                    // Цикл
-                    for (let i = 0; i < numNodes; i++) {
-                        addEdgeLocal(i + 1, ((i + 1) % numNodes) + 1, 1, directed);
-                    }
-                } else if (type === 'path') {
-                    // Путь
-                    for (let i = 0; i < numNodes - 1; i++) {
-                        addEdgeLocal(i + 1, i + 2, 1, directed);
-                    }
-                }
+                await createClassicGraphLocal(numNodes, type, directed);
             }
         } catch (error) {
             console.error('Error creating classic graph:', error);
-            alert('Ошибка при создании классического графа. Проверьте подключение к серверу.');
+            // Создаем локально при ошибке
+            await createClassicGraphLocal(numNodes, type, directed);
         }
         
         selectElement(null);
         saveState('create-classic-graph', { numNodes, type, directed });
+    }
+    
+    // Вспомогательная функция для локального создания классического графа
+    async function createClassicGraphLocal(numNodes, type, directed) {
+        const createdNodeIds = [];
+        const centerX = viewBox.x + viewBox.width / 2;
+        const centerY = viewBox.y + viewBox.height / 2;
+        const radius = Math.min(viewBox.width, viewBox.height) / 3;
+        
+        // Создаем вершины
+        for (let i = 0; i < numNodes; i++) {
+            let x, y;
+            
+            if (type === 'complete' || type === 'cycle' || type === 'path') {
+                const angle = (i / numNodes) * 2 * Math.PI;
+                x = centerX + radius * Math.cos(angle);
+                y = centerY + radius * Math.sin(angle);
+            } else {
+                x = viewBox.x + NODE_RADIUS + Math.random() * (viewBox.width - 2 * NODE_RADIUS);
+                y = viewBox.y + NODE_RADIUS + Math.random() * (viewBox.height - 2 * NODE_RADIUS);
+            }
+            
+            const nodeGroup = createVertexLocal(x, y, i + 1);
+            createdNodeIds.push(i + 1);
+            
+            // Синхронизируем вершину с сервером
+            try {
+                await addVertexToServer((i + 1).toString());
+            } catch (error) {
+                console.warn('Failed to sync vertex to server:', error);
+            }
+        }
+        
+        // Создаем ребра в зависимости от типа графа
+        if (type === 'complete') {
+            // Полный граф
+            for (let i = 0; i < numNodes; i++) {
+                for (let j = directed ? 0 : i + 1; j < numNodes; j++) {
+                    if (i !== j) {
+                        const edgeId = addEdgeLocal(i + 1, j + 1, 1, directed);
+                        if (edgeId) {
+                            // Синхронизируем ребро с сервером
+                            try {
+                                await addEdgeToServer(i + 1, j + 1, 1, directed);
+                            } catch (error) {
+                                console.warn('Failed to sync edge to server:', error);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (type === 'cycle') {
+            // Цикл
+            for (let i = 0; i < numNodes; i++) {
+                const from = i + 1;
+                const to = ((i + 1) % numNodes) + 1;
+                const edgeId = addEdgeLocal(from, to, 1, directed);
+                if (edgeId) {
+                    // Синхронизируем ребро с сервером
+                    try {
+                        await addEdgeToServer(from, to, 1, directed);
+                    } catch (error) {
+                        console.warn('Failed to sync edge to server:', error);
+                    }
+                }
+            }
+        } else if (type === 'path') {
+            // Путь
+            for (let i = 0; i < numNodes - 1; i++) {
+                const from = i + 1;
+                const to = i + 2;
+                const edgeId = addEdgeLocal(from, to, 1, directed);
+                if (edgeId) {
+                    // Синхронизируем ребро с сервером
+                    try {
+                        await addEdgeToServer(from, to, 1, directed);
+                    } catch (error) {
+                        console.warn('Failed to sync edge to server:', error);
+                    }
+                }
+            }
+        }
+        
+        console.log(`Created ${type} graph with ${numNodes} vertices`);
     }
     
     // Обработчики событий
@@ -1579,7 +1641,7 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
     `;
     document.body.appendChild(classicGraphModal);
     
-    // Модальное окно для алгоритмов (обновленное)
+    // Модальное окно для алгоритмов
     const algorithmModal = document.createElement('div');
     algorithmModal.className = 'modal';
     algorithmModal.innerHTML = `
@@ -1687,6 +1749,12 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
     });
     
     document.getElementById('confirm-random-btn').addEventListener('click', async () => {
+        const confirmBtn = document.getElementById('confirm-random-btn');
+        const originalText = confirmBtn.textContent;
+        
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Создание...';
+        
         const numNodes = parseInt(document.getElementById('random-nodes').value);
         const numEdges = parseInt(document.getElementById('random-edges').value);
         const directed = document.getElementById('random-directed').checked;
@@ -1694,6 +1762,8 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         
         if (isNaN(numNodes) || numNodes < 2) {
             alert('Количество вершин должно быть не менее 2.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
             return;
         }
         
@@ -1701,23 +1771,36 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         
         if (isNaN(numEdges) || numEdges < 0 || numEdges > maxEdges) {
             alert(`Количество рёбер должно быть от 0 до ${maxEdges} для ${numNodes} вершин.`);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
             return;
         }
         
         if (numNodes > 50) {
             if (!confirm(`Создание графа с ${numNodes} вершинами может замедлить работу. Продолжить?`)) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalText;
                 return;
             }
         }
         
         if (numEdges > 100) {
             if (!confirm(`Создание графа с ${numEdges} рёбрами может замедлить работу. Продолжить?`)) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalText;
                 return;
             }
         }
         
-        randomGraphModal.style.display = 'none';
-        await createRandomGraph(numNodes, numEdges, directed, weighted);
+        try {
+            await createRandomGraph(numNodes, numEdges, directed, weighted);
+            randomGraphModal.style.display = 'none';
+        } catch (error) {
+            alert('Ошибка при создании графа: ' + error.message);
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
+        }
     });
     
     createClassicBtn.addEventListener('click', () => {
@@ -1730,23 +1813,40 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
     });
     
     document.getElementById('confirm-classic-btn').addEventListener('click', async () => {
+        const confirmBtn = document.getElementById('confirm-classic-btn');
+        const originalText = confirmBtn.textContent;
+        
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Создание...';
+        
         const numNodes = parseInt(document.getElementById('classic-nodes').value);
         const graphType = document.getElementById('classic-type').value;
         const directed = document.getElementById('classic-directed').checked;
         
         if (isNaN(numNodes) || numNodes < 2) {
             alert('Количество вершин должно быть не менее 2.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
             return;
         }
         
         if (numNodes > 30) {
             if (!confirm(`Создание классического графа с ${numNodes} вершинами может замедлить работу. Продолжить?`)) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalText;
                 return;
             }
         }
         
-        classicGraphModal.style.display = 'none';
-        await createClassicGraphByType(numNodes, graphType, directed);
+        try {
+            await createClassicGraphByType(numNodes, graphType, directed);
+            classicGraphModal.style.display = 'none';
+        } catch (error) {
+            alert('Ошибка при создании графа: ' + error.message);
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = originalText;
+        }
     });
     
     // Обработчики для алгоритмов
@@ -2257,7 +2357,40 @@ function addEdgeLocal(fromId, toId, weight = 1, directed = false) {
         });
     }
     
-    // Другие функции визуализации...
+    function visualizeEulerianPath(vertexPath, edges) {
+        visualizePath(vertexPath);
+    }
+    
+    function visualizeHamiltonianPath(path, edges) {
+        visualizePath(path);
+    }
+    
+    function visualizeTopologicalSort(order, levels) {
+        // Выделяем вершины в порядке топологической сортировки
+        order.forEach((vertexId, index) => {
+            const node = nodesData.get(vertexId);
+            if (node && node.element) {
+                const circle = node.element.querySelector('circle');
+                if (circle) {
+                    const hue = (index * 30) % 360;
+                    circle.setAttribute('fill', `hsl(${hue}, 70%, 80%)`);
+                    
+                    // Добавляем номер порядка
+                    const text = node.element.querySelector('text');
+                    if (text) {
+                        const orderText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        orderText.setAttribute('x', '0');
+                        orderText.setAttribute('y', '25');
+                        orderText.setAttribute('text-anchor', 'middle');
+                        orderText.setAttribute('fill', '#333');
+                        orderText.setAttribute('font-size', '12');
+                        orderText.textContent = `#${index + 1}`;
+                        node.element.appendChild(orderText);
+                    }
+                }
+            }
+        });
+    }
     
     // Обработчики кнопок инструментов
     addVertexBtn.addEventListener('click', () => toggleMode('add-vertex'));
