@@ -52,38 +52,56 @@ def get_user_graph():
     return graph
 
 def save_graph_state(graph):
-    """Сохранить состояние графа для undo/redo и обновить данные сессии"""
-    # Получаем текущее состояние
-    vertices = graph.get_vertices()
-    edges = graph.get_edges()
+    """Сохранить состояние графа для undo/redo"""
+    vertices = []
     
-    # Собираем данные о вершинах с их метками
-    vertices_data = []
-    for i, vertex_id in enumerate(vertices):
-        # Предполагаем, что у вершины есть метод get_label() или используем ID как метку
-        try:
-            label = graph.get_vertex_label(vertex_id)
-        except:
-            label = f"v{vertex_id}"
-        vertices_data.append({'id': vertex_id, 'label': label})
+    # Получаем все вершины
+    try:
+        vertex_ids = graph.get_vertices()
+        for v_id in vertex_ids:
+            try:
+                # Пробуем получить метку вершины
+                label = graph.get_vertex_label(v_id)
+            except:
+                label = f"v{v_id}"
+            vertices.append({'id': v_id, 'label': label})
+    except:
+        # Если метод get_vertices не работает, пробуем другой подход
+        vertices = []
     
-    edges_data = [list(edge) for edge in edges]  # Преобразуем tuple в list
+    # Получаем все рёбра
+    edges = []
+    try:
+        edge_list = graph.get_edges()
+        for edge in edge_list:
+            if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                source, target = edge[0], edge[1]
+                weight = edge[2] if len(edge) > 2 else 1.0
+                edges.append([source, target, weight])
+    except:
+        edges = []
     
     graph_state = {
-        'vertices': vertices_data,
-        'edges': edges_data
+        'vertices': vertices,
+        'edges': edges
     }
     
-    # Удаляем состояния после текущего индекса
+    # Инициализируем историю, если нужно
+    if 'history' not in session:
+        session['history'] = []
+        session['history_index'] = -1
+    
+    # Обрезаем историю после текущего индекса
     session['history'] = session['history'][:session['history_index'] + 1]
     
     # Добавляем новое состояние
     session['history'].append(graph_state)
-    session['history_index'] += 1
+    session['history_index'] = len(session['history']) - 1
     
-    # Обновляем текущие данные графа в сессии
+    # Обновляем текущие данные графа
     session['graph_data'] = graph_state
-
+    
+    print(f"DEBUG: Saved state with {len(vertices)} vertices and {len(edges)} edges")
 def update_session_from_graph(graph):
     """Обновить данные сессии из текущего состояния графа"""
     vertices = graph.get_vertices()
@@ -169,28 +187,18 @@ def get_graph():
 
 @app.route('/api/graph/clear', methods=['POST'])
 def clear_graph():
-    # Создаем или получаем сессию
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
-    # Инициализируем данные графа, если их нет
-    if 'graph_data' not in session:
-        session['graph_data'] = {'vertices': [], 'edges': []}
-    
-    # Получаем текущий граф (содержащий текущие данные)
     graph = get_user_graph()
-    
-    # Сохраняем текущее состояние для undo
     save_graph_state(graph)
     
-    # Очищаем граф
+    print("DEBUG: Clearing graph...")
     graph.clear()
     
-    # Обновляем сессию с пустым графом
     update_session_from_graph(graph)
     
     return jsonify({'status': 'success'})
-
 @app.route('/api/vertex', methods=['POST'])
 def add_vertex():
     if 'user_id' not in session:
@@ -374,100 +382,183 @@ def redo_action():
 # Генерация графов
 @app.route('/api/graph/random', methods=['POST'])
 def generate_random_graph():
+    """Генерация случайного графа (И-17)"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
     data = request.json
     
-    num_vertices = int(data.get('num_vertices', 10))
-    num_edges = int(data.get('num_edges', 15))
-    directed = bool(data.get('directed', False))
-    weighted = bool(data.get('weighted', False))
-    
-    graph = get_user_graph()
-    save_graph_state(graph)
-    
-    # Очищаем текущий граф
-    graph.clear()
-    
-    # Добавляем вершины
-    for i in range(num_vertices):
-        graph.add_vertex(f"v{i}")
-    
-    # Добавляем случайные ребра
-    import random
-    max_possible_edges = num_vertices * (num_vertices - 1)
-    if not directed:
-        max_possible_edges //= 2
-    
-    num_edges = min(num_edges, max_possible_edges)
-    
-    edges_added = 0
-    attempts = 0
-    max_attempts = num_edges * 10
-    
-    while edges_added < num_edges and attempts < max_attempts:
-        from_vertex = random.randint(0, num_vertices - 1)
-        to_vertex = random.randint(0, num_vertices - 1)
+    try:
+        num_vertices = int(data.get('num_vertices', 10))
+        num_edges = int(data.get('num_edges', 15))
+        directed = bool(data.get('directed', False))
+        weighted = bool(data.get('weighted', False))
         
-        if from_vertex != to_vertex:
-            weight = random.uniform(1, 10) if weighted else 1.0
-            if graph.add_edge(from_vertex, to_vertex, weight):
-                edges_added += 1
+        print(f"DEBUG: Generating random graph: vertices={num_vertices}, edges={num_edges}, directed={directed}, weighted={weighted}")
         
-        attempts += 1
-    
-    update_session_from_graph(graph)
-    
-    return jsonify({'status': 'success', 'edges_added': edges_added})
+        # ВАЖНО: Сохраняем состояние перед изменением
+        graph = get_user_graph()
+        save_graph_state(graph)
+        
+        # Полностью очищаем текущий граф
+        graph.clear()
+        
+        # Добавляем вершины с метками
+        for i in range(num_vertices):
+            graph.add_vertex(f"v{i}")
+        
+        # Генерируем рёбра
+        import random
+        edges_added = 0
+        max_attempts = num_edges * 100  # Ограничиваем попытки
+        
+        # Для ненаправленного графа используем set, чтобы избежать дубликатов
+        added_edges = set()
+        
+        while edges_added < num_edges and max_attempts > 0:
+            from_vertex = random.randint(0, num_vertices - 1)
+            to_vertex = random.randint(0, num_vertices - 1)
+            
+            # Не позволяем петлям в случайном графе (можно убрать, если нужно)
+            if from_vertex == to_vertex:
+                max_attempts -= 1
+                continue
+            
+            # Создаём ключ ребра в зависимости от типа графа
+            if directed:
+                edge_key = (from_vertex, to_vertex)
+                reverse_key = (to_vertex, from_vertex)
+                # Для направленного графа проверяем только прямое ребро
+                if edge_key in added_edges:
+                    max_attempts -= 1
+                    continue
+            else:
+                # Для ненаправленного графа ребро (a,b) == (b,a)
+                edge_key = (min(from_vertex, to_vertex), max(from_vertex, to_vertex))
+                if edge_key in added_edges:
+                    max_attempts -= 1
+                    continue
+            
+            # Генерируем вес
+            weight = round(random.uniform(1, 10), 1) if weighted else 1.0
+            
+            # Добавляем ребро
+            try:
+                success = graph.add_edge(from_vertex, to_vertex, weight)
+                if success:
+                    added_edges.add(edge_key)
+                    edges_added += 1
+                    
+                    # Если граф ненаправленный, добавляем обратное ребро в набор
+                    # но НЕ в граф, так как add_edge уже создаёт двустороннее
+                    if not directed:
+                        reverse_key = (to_vertex, from_vertex)
+                        added_edges.add(reverse_key)
+                        
+            except Exception as e:
+                print(f"DEBUG: Error adding edge {from_vertex}->{to_vertex}: {e}")
+            
+            max_attempts -= 1
+        
+        print(f"DEBUG: Successfully added {edges_added} edges")
+        
+        # Обновляем сессию
+        update_session_from_graph(graph)
+        
+        return jsonify({
+            'status': 'success', 
+            'edges_added': edges_added,
+            'vertices': num_vertices,
+            'directed': directed,
+            'weighted': weighted
+        })
+        
+    except Exception as e:
+        print(f"ERROR in generate_random_graph: {e}")
+        return jsonify({'error': str(e)}), 400
+
 
 @app.route('/api/graph/classic', methods=['POST'])
 def generate_classic_graph():
+    """Генерация классического графа (И-18)"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
     data = request.json
     
-    graph_type = data.get('type', 'complete')
-    num_vertices = int(data.get('num_vertices', 5))
-    directed = bool(data.get('directed', False))
-    
-    graph = get_user_graph()
-    save_graph_state(graph)
-    
-    # Очищаем текущий граф
-    graph.clear()
-    
-    # Добавляем вершины
-    for i in range(num_vertices):
-        graph.add_vertex(f"v{i}")
-    
-    # Создаем классический граф
-    if graph_type == 'complete':
-        # Полный граф K_n
+    try:
+        graph_type = data.get('type', 'complete')
+        num_vertices = int(data.get('num_vertices', 5))
+        directed = bool(data.get('directed', False))
+        
+        print(f"DEBUG: Generating classic graph: type={graph_type}, vertices={num_vertices}, directed={directed}")
+        
+        # Сохраняем состояние
+        graph = get_user_graph()
+        save_graph_state(graph)
+        
+        # Очищаем граф
+        graph.clear()
+        
+        # Добавляем вершины
         for i in range(num_vertices):
-            for j in range(i + 1, num_vertices):
+            graph.add_vertex(f"v{i}")
+        
+        # Создаём граф в зависимости от типа
+        edges_added = 0
+        
+        if graph_type == 'complete':
+            # Полный граф K_n
+            print(f"DEBUG: Creating complete graph K_{num_vertices}")
+            for i in range(num_vertices):
+                for j in range(i + 1, num_vertices):  # Избегаем дубликатов
+                    # Добавляем ребро
+                    graph.add_edge(i, j, 1.0)
+                    edges_added += 1
+                    
+                    # Если граф направленный, добавляем обратное ребро
+                    if directed:
+                        graph.add_edge(j, i, 1.0)
+                        edges_added += 1
+        
+        elif graph_type == 'cycle':
+            # Цикл C_n
+            print(f"DEBUG: Creating cycle graph C_{num_vertices}")
+            for i in range(num_vertices):
+                j = (i + 1) % num_vertices  # Следующая вершина по циклу
                 graph.add_edge(i, j, 1.0)
+                edges_added += 1
+                
                 if directed:
                     graph.add_edge(j, i, 1.0)
-    
-    elif graph_type == 'cycle':
-        # Цикл C_n
-        for i in range(num_vertices):
-            graph.add_edge(i, (i + 1) % num_vertices, 1.0)
-            if directed:
-                graph.add_edge((i + 1) % num_vertices, i, 1.0)
-    
-    elif graph_type == 'path':
-        # Путь P_n
-        for i in range(num_vertices - 1):
-            graph.add_edge(i, i + 1, 1.0)
-            if directed:
-                graph.add_edge(i + 1, i, 1.0)
-    
-    update_session_from_graph(graph)
-    
-    return jsonify({'status': 'success'})
-
+                    edges_added += 1
+        
+        elif graph_type == 'path':
+            # Путь P_n
+            print(f"DEBUG: Creating path graph P_{num_vertices}")
+            for i in range(num_vertices - 1):
+                graph.add_edge(i, i + 1, 1.0)
+                edges_added += 1
+                
+                if directed:
+                    graph.add_edge(i + 1, i, 1.0)
+                    edges_added += 1
+        
+        print(f"DEBUG: Added {edges_added} edges for {graph_type} graph")
+        
+        # Обновляем сессию
+        update_session_from_graph(graph)
+        
+        return jsonify({
+            'status': 'success',
+            'type': graph_type,
+            'vertices': num_vertices,
+            'edges_added': edges_added,
+            'directed': directed
+        })
+        
+    except Exception as e:
+        print(f"ERROR in generate_classic_graph: {e}")
+        return jsonify({'error': str(e)}), 400
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
