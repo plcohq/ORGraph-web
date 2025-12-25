@@ -5,6 +5,7 @@ import os
 import uuid
 import json
 import tempfile
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, '..', 'static')
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path='')
@@ -41,86 +42,125 @@ def get_user_graph():
     # Создаём объект графа из данных сессии
     graph = orgraph_core.Graph()
     
-    # Восстанавливаем вершины
+    # Восстанавливаем вершины (frontend ID → C++ ID)
     for vertex_data in session['graph_data']['vertices']:
-        graph.add_vertex(vertex_data['label'])
+        frontend_id = int(vertex_data['id'])
+        cpp_id = frontend_id - 1  # Преобразуем в C++ ID
+        try:
+            # Создаём вершину с правильным C++ ID
+            graph.add_vertex(vertex_data['label'])
+        except Exception as e:
+            print(f"WARNING: Failed to restore vertex {frontend_id}: {e}")
     
-    # Восстанавливаем рёбра
+    # Восстанавливаем рёбра (frontend ID → C++ ID)
     for edge in session['graph_data']['edges']:
-        graph.add_edge(edge[0], edge[1], edge[2])
+        if len(edge) >= 2:
+            source_frontend = int(edge[0])
+            target_frontend = int(edge[1])
+            source_cpp = source_frontend - 1
+            target_cpp = target_frontend - 1
+            weight = float(edge[2]) if len(edge) > 2 else 1.0
+            try:
+                graph.add_edge(source_cpp, target_cpp, weight)
+            except Exception as e:
+                print(f"WARNING: Failed to restore edge {source_frontend}->{target_frontend}: {e}")
     
     return graph
 
 def save_graph_state(graph):
     """Сохранить состояние графа для undo/redo"""
-    vertices = []
-    
-    # Получаем все вершины
     try:
-        vertex_ids = graph.get_vertices()
-        for v_id in vertex_ids:
+        # Получаем вершины из C++ модуля (C++ IDs)
+        vertices_cpp = []
+        try:
+            vertices_cpp = graph.get_vertices()  # [0, 1, 2, ...]
+        except Exception as e:
+            print(f"WARNING: Could not get vertices: {e}")
+        
+        # Получаем рёбра из C++ модуля
+        edges_cpp = []
+        try:
+            edges_cpp = graph.get_edges()  # [(0, 1, 1.0), ...]
+        except Exception as e:
+            print(f"WARNING: Could not get edges: {e}")
+        
+        # Преобразуем в формат для сессии (frontend IDs)
+        vertices_data = []
+        for cpp_id in vertices_cpp:
+            frontend_id = cpp_id + 1
             try:
-                # Пробуем получить метку вершины
-                label = graph.get_vertex_label(v_id)
+                label = graph.get_vertex_label(cpp_id)
             except:
-                label = f"v{v_id}"
-            vertices.append({'id': v_id, 'label': label})
-    except:
-        # Если метод get_vertices не работает, пробуем другой подход
-        vertices = []
-    
-    # Получаем все рёбра
-    edges = []
-    try:
-        edge_list = graph.get_edges()
-        for edge in edge_list:
+                label = f"v{frontend_id}"
+            vertices_data.append({'id': frontend_id, 'label': label})
+        
+        edges_data = []
+        for edge in edges_cpp:
             if isinstance(edge, (list, tuple)) and len(edge) >= 2:
-                source, target = edge[0], edge[1]
-                weight = edge[2] if len(edge) > 2 else 1.0
-                edges.append([source, target, weight])
-    except:
-        edges = []
-    
-    graph_state = {
-        'vertices': vertices,
-        'edges': edges
-    }
-    
-    # Инициализируем историю, если нужно
-    if 'history' not in session:
-        session['history'] = []
-        session['history_index'] = -1
-    
-    # Обрезаем историю после текущего индекса
-    session['history'] = session['history'][:session['history_index'] + 1]
-    
-    # Добавляем новое состояние
-    session['history'].append(graph_state)
-    session['history_index'] = len(session['history']) - 1
-    
-    # Обновляем текущие данные графа
-    session['graph_data'] = graph_state
-    
-    print(f"DEBUG: Saved state with {len(vertices)} vertices and {len(edges)} edges")
+                source_cpp = int(edge[0])
+                target_cpp = int(edge[1])
+                source_frontend = source_cpp + 1
+                target_frontend = target_cpp + 1
+                weight = float(edge[2]) if len(edge) > 2 else 1.0
+                edges_data.append([source_frontend, target_frontend, weight])
+        
+        graph_state = {
+            'vertices': vertices_data,
+            'edges': edges_data
+        }
+        
+        print(f"DEBUG: Saving state - {len(vertices_data)} vertices, {len(edges_data)} edges")
+        
+        # Удаляем состояния после текущего индекса
+        session['history'] = session['history'][:session['history_index'] + 1]
+        
+        # Добавляем новое состояние
+        session['history'].append(graph_state)
+        session['history_index'] += 1
+        
+        # Обновляем текущие данные графа в сессии
+        session['graph_data'] = graph_state
+        
+    except Exception as e:
+        print(f"ERROR in save_graph_state: {e}")
+
 def update_session_from_graph(graph):
     """Обновить данные сессии из текущего состояния графа"""
-    vertices = graph.get_vertices()
-    edges = graph.get_edges()
-    
-    vertices_data = []
-    for i, vertex_id in enumerate(vertices):
-        try:
-            label = graph.get_vertex_label(vertex_id)
-        except:
-            label = f"v{vertex_id}"
-        vertices_data.append({'id': vertex_id, 'label': label})
-    
-    edges_data = [list(edge) for edge in edges]
-    
-    session['graph_data'] = {
-        'vertices': vertices_data,
-        'edges': edges_data
-    }
+    try:
+        # Получаем данные из C++ модуля
+        vertices_cpp = graph.get_vertices()  # [0, 1, 2, ...]
+        edges_cpp = graph.get_edges()  # [(0, 1, 1.0), ...]
+        
+        # Преобразуем в frontend формат
+        vertices_data = []
+        for cpp_id in vertices_cpp:
+            frontend_id = cpp_id + 1
+            try:
+                label = graph.get_vertex_label(cpp_id)
+            except:
+                label = f"v{frontend_id}"
+            vertices_data.append({'id': frontend_id, 'label': label})
+        
+        edges_data = []
+        for edge in edges_cpp:
+            if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                source_cpp = int(edge[0])
+                target_cpp = int(edge[1])
+                source_frontend = source_cpp + 1
+                target_frontend = target_cpp + 1
+                weight = float(edge[2]) if len(edge) > 2 else 1.0
+                edges_data.append([source_frontend, target_frontend, weight])
+        
+        session['graph_data'] = {
+            'vertices': vertices_data,
+            'edges': edges_data
+        }
+        
+        print(f"DEBUG: Updated session - {len(vertices_data)} vertices, {len(edges_data)} edges")
+        
+    except Exception as e:
+        print(f"ERROR in update_session_from_graph: {e}")
+        session['graph_data'] = {'vertices': [], 'edges': []}
 
 # Маршруты API
 @app.route('/')
@@ -131,6 +171,7 @@ def index():
 @app.route('/index.html')
 def index_html():
     return send_from_directory(os.path.join(app.static_folder, 'assets'), 'index.html')
+
 @app.route('/<path:filename>')
 def static_files(filename):
     # Пробуем найти файл в разных папках
@@ -146,61 +187,71 @@ def static_files(filename):
             return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
     
     return "File not found", 404
+
 @app.route('/api/graph', methods=['GET'])
 def get_graph():
+    """Получить текущий граф в формате для фронтенда"""
     if 'user_id' not in session:
         return jsonify({'vertices': [], 'edges': []})
     
     graph = get_user_graph()
     
     try:
-        # Получаем граф в формате JSON
-        graph_json = graph.to_json()
-        graph_data = json.loads(graph_json)
+        # Получаем вершины из C++ модуля
+        vertices_cpp = graph.get_vertices()  # [0, 1, 2, ...]
+        vertices_frontend = [str(v + 1) for v in vertices_cpp]  # Преобразуем в [1, 2, 3, ...]
         
-        print(f"DEBUG: Graph data from C++ module: {graph_data}")  # Логирование
+        # Получаем рёбра из C++ модуля
+        edges_cpp = graph.get_edges()  # [(0, 1, 1.0), (1, 2, 1.0), ...]
+        edges_frontend = []
         
-        # Фильтруем дубликаты рёбер
-        edges = graph_data.get('edges', [])
-        unique_edges = []
-        seen_edges = set()
+        for edge in edges_cpp:
+            if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                # Преобразуем индексы C++ (0-based) в фронтенд (1-based)
+                source = str(edge[0] + 1)
+                target = str(edge[1] + 1)
+                weight = float(edge[2]) if len(edge) > 2 else 1.0
+                edges_frontend.append({
+                    'source': source,
+                    'target': target,
+                    'weight': weight
+                })
         
-        for edge in edges:
-            # Создаем ключ для проверки уникальности
-            if isinstance(edge, dict):
-                edge_key = (edge.get('source'), edge.get('target'))
-            elif isinstance(edge, list) and len(edge) >= 2:
-                edge_key = (edge[0], edge[1])
-            else:
-                edge_key = tuple(edge[:2])
-                
-            if edge_key not in seen_edges:
-                seen_edges.add(edge_key)
-                unique_edges.append(edge)
+        print(f"DEBUG: get_graph - returning {len(vertices_frontend)} vertices, {len(edges_frontend)} edges")
         
         return jsonify({
-            'vertices': [str(v) for v in graph.get_vertices()],
-            'edges': unique_edges  # Возвращаем уникальные ребра
+            'vertices': vertices_frontend,
+            'edges': edges_frontend
         })
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"ERROR in get_graph: {e}")
+        return jsonify({'vertices': [], 'edges': []})
 
 @app.route('/api/graph/clear', methods=['POST'])
 def clear_graph():
+    """Очистить граф"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
+    # Получаем текущий граф
     graph = get_user_graph()
+    
+    # Сохраняем текущее состояние для undo
     save_graph_state(graph)
     
+    # Очищаем граф
     print("DEBUG: Clearing graph...")
     graph.clear()
     
+    # Обновляем сессию с пустым графом
     update_session_from_graph(graph)
     
     return jsonify({'status': 'success'})
+
 @app.route('/api/vertex', methods=['POST'])
 def add_vertex():
+    """Добавить вершину"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
@@ -209,35 +260,53 @@ def add_vertex():
     if not data or 'id' not in data:
         return jsonify({'error': 'Vertex ID is required'}), 400
     
+    # Фронтенд присылает ID в виде строки "1", "2", и т.д.
+    frontend_id = str(data['id'])
+    
     graph = get_user_graph()
     save_graph_state(graph)
     
     try:
-        # В нашей реализации вершины добавляются с автоинкрементом ID
-        # Метка используется для отображения
-        vertex_id = graph.add_vertex(str(data['id']))
+        # C++ модуль сам назначает ID (0, 1, 2...)
+        # Мы передаём метку, а C++ возвращает внутренний ID
+        cpp_vertex_id = graph.add_vertex(f"v{frontend_id}")
+        
+        print(f"DEBUG: Added vertex. Frontend ID: {frontend_id}, C++ ID: {cpp_vertex_id}")
+        
         update_session_from_graph(graph)
-        return jsonify({'status': 'success', 'id': vertex_id})
+        return jsonify({'status': 'success', 'id': frontend_id})
+        
     except Exception as e:
+        print(f"ERROR in add_vertex: {e}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/vertex/<vertex_id>', methods=['DELETE'])
 def remove_vertex(vertex_id):
+    """Удалить вершину"""
     if 'user_id' not in session:
         return jsonify({'error': 'No session found'}), 400
     
     graph = get_user_graph()
     save_graph_state(graph)
     
+    # Преобразуем фронтенд ID в C++ ID
+    frontend_id = int(vertex_id)  # "1" → 1
+    cpp_id = frontend_id - 1      # 1 → 0
+    
+    print(f"DEBUG: Removing vertex. Frontend ID: {frontend_id}, C++ ID: {cpp_id}")
+    
     try:
-        success = graph.remove_vertex(int(vertex_id))
+        success = graph.remove_vertex(cpp_id)
         update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
+        
     except Exception as e:
+        print(f"ERROR in remove_vertex: {e}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/edge', methods=['POST'])
 def add_edge():
+    """Добавить ребро"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
@@ -249,40 +318,54 @@ def add_edge():
     graph = get_user_graph()
     save_graph_state(graph)
     
-    source = int(data['source'])
-    target = int(data['target'])
-    weight = float(data.get('weight', 1.0))
-    directed = bool(data.get('directed', True))  # ИЗМЕНЕНИЕ: по умолчанию True!
+    # Преобразуем фронтенд ID (1-based) в C++ ID (0-based)
+    source_frontend = int(data['source'])  # "1" → 1
+    target_frontend = int(data['target'])  # "2" → 2
+    source_cpp = source_frontend - 1      # 1 → 0
+    target_cpp = target_frontend - 1      # 2 → 1
     
-    print(f"DEBUG: Adding edge {source}->{target}, weight={weight}, directed={directed}")
+    weight = float(data.get('weight', 1.0))
+    directed = bool(data.get('directed', False))
+    
+    print(f"DEBUG: Adding edge. Frontend: {source_frontend}->{target_frontend}, C++: {source_cpp}->{target_cpp}, weight={weight}, directed={directed}")
     
     try:
-        success = graph.add_edge(source, target, weight)
+        success = graph.add_edge(source_cpp, target_cpp, weight)
         
         # Если граф ненаправленный и нужно двустороннее ребро
-        # ТОЛЬКО если явно указано directed=False
-        if not directed and source != target:  # Добавляем проверку source != target
-            # Добавляем обратное ребро для ненаправленного графа
-            print(f"DEBUG: Adding reverse edge {target}->{source}")
-            reverse_success = graph.add_edge(target, source, weight)
+        if not directed and source_frontend != target_frontend:
+            print(f"DEBUG: Adding reverse edge for undirected graph")
+            reverse_success = graph.add_edge(target_cpp, source_cpp, weight)
         
         update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
+        
     except Exception as e:
+        print(f"ERROR in add_edge: {e}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/edge/<source>/<target>', methods=['DELETE'])
 def remove_edge(source, target):
+    """Удалить ребро"""
     if 'user_id' not in session:
         return jsonify({'error': 'No session found'}), 400
     
     graph = get_user_graph()
     save_graph_state(graph)
     
+    # Преобразуем ID
+    source_frontend = int(source)  # "1" → 1
+    target_frontend = int(target)  # "2" → 2
+    source_cpp = source_frontend - 1
+    target_cpp = target_frontend - 1
+    
+    print(f"DEBUG: Removing edge. Frontend: {source_frontend}->{target_frontend}, C++: {source_cpp}->{target_cpp}")
+    
     try:
-        success = graph.remove_edge(int(source), int(target))
+        success = graph.remove_edge(source_cpp, target_cpp)
         update_session_from_graph(graph)
         return jsonify({'status': 'success' if success else 'failed'})
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -296,22 +379,28 @@ def run_algorithm(algorithm_name):
     graph = get_user_graph()
     
     try:
+        # Преобразуем ID вершин из фронтенда в C++
         if algorithm_name == 'dijkstra':
-            start = int(data.get('start_vertex', 0))
-            end = int(data.get('end_vertex', 0))
-            result = graph.dijkstra(start, end)
+            start_frontend = int(data.get('start_vertex', 1))
+            end_frontend = int(data.get('end_vertex', 1))
+            start_cpp = start_frontend - 1
+            end_cpp = end_frontend - 1
+            result = graph.dijkstra(start_cpp, end_cpp)
             
         elif algorithm_name == 'prim':
             result = graph.prim()
             
         elif algorithm_name == 'ford_bellman':
-            start = int(data.get('start_vertex', 0))
-            result = graph.ford_bellman(start)
+            start_frontend = int(data.get('start_vertex', 1))
+            start_cpp = start_frontend - 1
+            result = graph.ford_bellman(start_cpp)
             
         elif algorithm_name == 'floyd_algorithm':
-            start = int(data.get('start_vertex', 0))
-            end = int(data.get('end_vertex', 0))
-            result = graph.floyd_algorithm(start, end)
+            start_frontend = int(data.get('start_vertex', 1))
+            end_frontend = int(data.get('end_vertex', 1))
+            start_cpp = start_frontend - 1
+            end_cpp = end_frontend - 1
+            result = graph.floyd_algorithm(start_cpp, end_cpp)
             
         elif algorithm_name == 'find_eulerian_path':
             result = graph.find_eulerian_path()
@@ -338,15 +427,21 @@ def run_algorithm(algorithm_name):
             result = graph.minimum_spanning_tree()
             
         elif algorithm_name == 'dfs':
-            start = int(data.get('start_vertex', 0))
-            result = graph.dfs(start)
+            start_frontend = int(data.get('start_vertex', 1))
+            start_cpp = start_frontend - 1
+            result = graph.dfs(start_cpp)
             
         elif algorithm_name == 'bfs':
-            start = int(data.get('start_vertex', 0))
-            result = graph.bfs(start)
+            start_frontend = int(data.get('start_vertex', 1))
+            start_cpp = start_frontend - 1
+            result = graph.bfs(start_cpp)
             
         else:
             return jsonify({'error': f'Algorithm {algorithm_name} not found'}), 404
+        
+        # Преобразуем результат из C++ ID во фронтенд ID
+        if isinstance(result, dict) and 'path' in result and isinstance(result['path'], list):
+            result['path'] = [v + 1 for v in result['path']]
         
         return jsonify({'result': result})
         
@@ -382,93 +477,83 @@ def redo_action():
 # Генерация графов
 @app.route('/api/graph/random', methods=['POST'])
 def generate_random_graph():
-    """Генерация случайного графа (И-17)"""
+    """Генерация случайного графа"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
     data = request.json
     
     try:
-        num_vertices = int(data.get('num_vertices', 10))
-        num_edges = int(data.get('num_edges', 15))
+        num_vertices = int(data.get('num_vertices', 5))
+        num_edges = int(data.get('num_edges', 7))
         directed = bool(data.get('directed', False))
         weighted = bool(data.get('weighted', False))
         
         print(f"DEBUG: Generating random graph: vertices={num_vertices}, edges={num_edges}, directed={directed}, weighted={weighted}")
         
-        # ВАЖНО: Сохраняем состояние перед изменением
         graph = get_user_graph()
         save_graph_state(graph)
         
-        # Полностью очищаем текущий граф
+        # Очищаем текущий граф
         graph.clear()
         
-        # Добавляем вершины с метками
+        # Создаём вершины (C++ присвоит ID 0, 1, 2...)
+        created_cpp_ids = []
         for i in range(num_vertices):
-            graph.add_vertex(f"v{i}")
+            cpp_id = graph.add_vertex(f"random_v{i}")
+            created_cpp_ids.append(cpp_id)
         
-        # Генерируем рёбра
+        print(f"DEBUG: Created vertices with C++ IDs: {created_cpp_ids}")
+        
+        # Генерируем случайные рёбра
         import random
-        edges_added = 0
-        max_attempts = num_edges * 100  # Ограничиваем попытки
         
-        # Для ненаправленного графа используем set, чтобы избежать дубликатов
+        # Максимально возможное количество рёбер
+        max_possible_edges = num_vertices * (num_vertices - 1)
+        if not directed:
+            max_possible_edges //= 2
+        
+        num_edges = min(num_edges, max_possible_edges)
+        
+        edges_added = 0
+        attempts = 0
+        max_attempts = num_edges * 10
         added_edges = set()
         
-        while edges_added < num_edges and max_attempts > 0:
-            from_vertex = random.randint(0, num_vertices - 1)
-            to_vertex = random.randint(0, num_vertices - 1)
+        while edges_added < num_edges and attempts < max_attempts:
+            # Выбираем случайные вершины (C++ IDs)
+            from_cpp = random.randint(0, num_vertices - 1)
+            to_cpp = random.randint(0, num_vertices - 1)
             
-            # Не позволяем петлям в случайном графе (можно убрать, если нужно)
-            if from_vertex == to_vertex:
-                max_attempts -= 1
-                continue
-            
-            # Создаём ключ ребра в зависимости от типа графа
-            if directed:
-                edge_key = (from_vertex, to_vertex)
-                reverse_key = (to_vertex, from_vertex)
-                # Для направленного графа проверяем только прямое ребро
-                if edge_key in added_edges:
-                    max_attempts -= 1
-                    continue
-            else:
-                # Для ненаправленного графа ребро (a,b) == (b,a)
-                edge_key = (min(from_vertex, to_vertex), max(from_vertex, to_vertex))
-                if edge_key in added_edges:
-                    max_attempts -= 1
-                    continue
-            
-            # Генерируем вес
-            weight = round(random.uniform(1, 10), 1) if weighted else 1.0
-            
-            # Добавляем ребро
-            try:
-                success = graph.add_edge(from_vertex, to_vertex, weight)
-                if success:
-                    added_edges.add(edge_key)
-                    edges_added += 1
+            if from_cpp != to_cpp:
+                # Создаём уникальный ключ для ребра
+                if directed:
+                    edge_key = (from_cpp, to_cpp)
+                else:
+                    edge_key = (min(from_cpp, to_cpp), max(from_cpp, to_cpp))
+                
+                if edge_key not in added_edges:
+                    weight = round(random.uniform(1, 10), 1) if weighted else 1.0
                     
-                    # Если граф ненаправленный, добавляем обратное ребро в набор
-                    # но НЕ в граф, так как add_edge уже создаёт двустороннее
-                    if not directed:
-                        reverse_key = (to_vertex, from_vertex)
-                        added_edges.add(reverse_key)
+                    if graph.add_edge(from_cpp, to_cpp, weight):
+                        added_edges.add(edge_key)
+                        edges_added += 1
                         
-            except Exception as e:
-                print(f"DEBUG: Error adding edge {from_vertex}->{to_vertex}: {e}")
+                        # Если граф ненаправленный, добавляем обратное ребро в set
+                        if not directed:
+                            reverse_key = (to_cpp, from_cpp)
+                            added_edges.add(reverse_key)
             
-            max_attempts -= 1
+            attempts += 1
         
-        print(f"DEBUG: Successfully added {edges_added} edges")
+        print(f"DEBUG: Added {edges_added} edges (requested {num_edges})")
         
-        # Обновляем сессию
         update_session_from_graph(graph)
         
         return jsonify({
             'status': 'success', 
-            'edges_added': edges_added,
             'vertices': num_vertices,
+            'edges_added': edges_added,
             'directed': directed,
             'weighted': weighted
         })
@@ -477,10 +562,9 @@ def generate_random_graph():
         print(f"ERROR in generate_random_graph: {e}")
         return jsonify({'error': str(e)}), 400
 
-
 @app.route('/api/graph/classic', methods=['POST'])
 def generate_classic_graph():
-    """Генерация классического графа (И-18)"""
+    """Генерация классического графа"""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
     
@@ -488,35 +572,35 @@ def generate_classic_graph():
     
     try:
         graph_type = data.get('type', 'complete')
-        num_vertices = int(data.get('num_vertices', 5))
+        num_vertices = int(data.get('num_vertices', 4))
         directed = bool(data.get('directed', False))
         
         print(f"DEBUG: Generating classic graph: type={graph_type}, vertices={num_vertices}, directed={directed}")
         
-        # Сохраняем состояние
         graph = get_user_graph()
         save_graph_state(graph)
         
-        # Очищаем граф
+        # Очищаем текущий граф
         graph.clear()
         
-        # Добавляем вершины
+        # Создаём вершины
+        created_cpp_ids = []
         for i in range(num_vertices):
-            graph.add_vertex(f"v{i}")
+            cpp_id = graph.add_vertex(f"{graph_type}_v{i}")
+            created_cpp_ids.append(cpp_id)
         
-        # Создаём граф в зависимости от типа
+        print(f"DEBUG: Created vertices with C++ IDs: {created_cpp_ids}")
+        
         edges_added = 0
         
         if graph_type == 'complete':
             # Полный граф K_n
             print(f"DEBUG: Creating complete graph K_{num_vertices}")
             for i in range(num_vertices):
-                for j in range(i + 1, num_vertices):  # Избегаем дубликатов
-                    # Добавляем ребро
+                for j in range(i + 1, num_vertices):
                     graph.add_edge(i, j, 1.0)
                     edges_added += 1
                     
-                    # Если граф направленный, добавляем обратное ребро
                     if directed:
                         graph.add_edge(j, i, 1.0)
                         edges_added += 1
@@ -525,7 +609,7 @@ def generate_classic_graph():
             # Цикл C_n
             print(f"DEBUG: Creating cycle graph C_{num_vertices}")
             for i in range(num_vertices):
-                j = (i + 1) % num_vertices  # Следующая вершина по циклу
+                j = (i + 1) % num_vertices
                 graph.add_edge(i, j, 1.0)
                 edges_added += 1
                 
@@ -546,19 +630,21 @@ def generate_classic_graph():
         
         print(f"DEBUG: Added {edges_added} edges for {graph_type} graph")
         
-        # Обновляем сессию
         update_session_from_graph(graph)
         
         return jsonify({
             'status': 'success',
             'type': graph_type,
             'vertices': num_vertices,
-            'edges_added': edges_added,
+            'edges': edges_added,
             'directed': directed
         })
         
     except Exception as e:
         print(f"ERROR in generate_classic_graph: {e}")
         return jsonify({'error': str(e)}), 400
+
 if __name__ == '__main__':
+    print("Starting ORGraph server...")
+    print("DEBUG mode: ON")
     app.run(debug=True, host='0.0.0.0', port=5000)
